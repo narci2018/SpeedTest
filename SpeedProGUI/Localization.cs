@@ -117,6 +117,7 @@ public static class Loc
         ["set.about"]     = ("About SpeedPro",   "关于 SpeedPro"),
         ["set.system"]    = ("System",           "系统"),
         ["set.actions"]   = ("Quick Actions",    "快捷操作"),
+        ["set.checkupdate"] = ("Check Updates", "检查更新"),
         ["set.openlog"]   = ("Open Log Directory", "打开日志目录"),
         ["set.refresh"]   = ("Refresh Engine Status", "刷新引擎状态"),
     };

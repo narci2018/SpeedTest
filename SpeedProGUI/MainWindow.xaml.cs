@@ -86,6 +86,9 @@ public partial class MainWindow : Window
         DrawEmptyChart(ULChartCanvas, "Waiting for data…");
         ApplyLanguage();
         LoadConfig();
+        LoadHistory();
+        HistoryChartCanvas.SizeChanged += (s, e) => { if (HistoryGrid != null) ApplyHistoryFilter(); };
+        _ = CheckForUpdatesAsync(manual: false);
         _ = AnimationLoop();
         _ = TempShot();
     }
@@ -234,6 +237,7 @@ public partial class MainWindow : Window
         PanelSettings.Visibility     = page == NavPage.Settings      ? Visibility.Visible : Visibility.Collapsed;
         // The log + summary row only belongs to the broadband test page
         BottomRow.Visibility         = page == NavPage.Test          ? Visibility.Visible : Visibility.Collapsed;
+        if (page == NavPage.History) ApplyHistoryFilter();
         HeaderTitle.Text = page switch
         {
             NavPage.Iperf3     => Loc.Get("title.iperf3"),
@@ -457,6 +461,27 @@ public partial class MainWindow : Window
         StartBtn.Background = (Brush)new BrushConverter().ConvertFrom(_isRunning ? "#F87171" : "#62CDFF");
     }
 
+    /// <summary>Lists available LibreSpeed servers (librespeed-cli --list) into the TEST LOG.</summary>
+    private async void ServerList_Click(object? sender, RoutedEventArgs e)
+    {
+        AddLog("--- LibreSpeed servers (librespeed-cli --list) ---");
+        try
+        {
+            var psi = new ProcessStartInfo(GetExePath("librespeed-cli"), "--list")
+            { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            using var proc = Process.Start(psi)!;
+            string output = await proc.StandardOutput.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            await proc.WaitForExitAsync();
+            foreach (var line in output.Split('\n').Where(l => l.Trim().Length > 0).Take(40))
+                AddLog("  " + line.TrimEnd());
+            AddLog("Tip: fill a server ID above into the Server box to pin a node (empty = auto).");
+        }
+        catch (Exception ex)
+        {
+            AddLog("Server list failed: " + ex.Message);
+        }
+    }
+
     private void SetLiveStatus(string color, string text)
     {
         LiveDot.Fill = color switch { "green" => (Brush)new BrushConverter().ConvertFrom("#4ADE80"),
@@ -615,8 +640,12 @@ public partial class MainWindow : Window
         SetProgressStage("stage.ping");
         int dur = (int)SettingDuration.Value;
         int totalTimeoutSec = Math.Max(dur + 45, 75);
+        // Server selection: LibreSpeed 节点 ID/URL（空 = 自动选择）；speedtest-go 用作搜索关键字
+        string serverArg = "";
+        string serverSel = ServerInput.Text.Trim();
+        if (serverSel.Length > 0) serverArg = $" --server={serverSel}";
         var psi = new ProcessStartInfo(GetExePath("librespeed-cli"),
-            $"--json --duration={dur} --concurrent={(int)SettingThreads.Value} --server=82")
+            $"--json --duration={dur} --concurrent={(int)SettingThreads.Value}{serverArg}")
         { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         // Inject system proxy into child process environment
         var proxyArg = GetSystemProxyArg();
@@ -840,7 +869,123 @@ public partial class MainWindow : Window
 
     private void SaveHistory(string engine, double dl, double ul, double ping, double jitter, string ip, string isp, string server, string quality)
     {
-        _history.Insert(0, new HistoryEntry(DateTime.Now.ToString("HH:mm:ss"), engine, dl, ul, ping, jitter, ip, isp, server, quality));
+        _history.Insert(0, new HistoryEntry(DateTime.Now.ToString("MM-dd HH:mm:ss"), engine, dl, ul, ping, jitter, ip, isp, server, quality));
+        PersistHistory();
+        if (HistoryGrid != null) ApplyHistoryFilter();
+    }
+
+    // ── History persistence (rolling JSON in %APPDATA%\SpeedPro\history.json) ──
+    private const int HistoryMaxEntries = 500;
+
+    private string HistoryPath => global::System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpeedPro", "history.json");
+
+    private void LoadHistory()
+    {
+        try
+        {
+            if (!global::System.IO.File.Exists(HistoryPath)) return;
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<HistoryEntry>>(
+                global::System.IO.File.ReadAllText(HistoryPath));
+            if (list == null) return;
+            foreach (var h in list.Take(HistoryMaxEntries)) _history.Add(h);
+        }
+        catch { }
+    }
+
+    private void PersistHistory()
+    {
+        try
+        {
+            while (_history.Count > HistoryMaxEntries) _history.RemoveAt(_history.Count - 1);
+            global::System.IO.Directory.CreateDirectory(global::System.IO.Path.GetDirectoryName(HistoryPath)!);
+            global::System.IO.File.WriteAllText(HistoryPath,
+                System.Text.Json.JsonSerializer.Serialize(_history.ToList()));
+        }
+        catch { }
+    }
+
+    /// <summary>Refreshes the history grid + trend chart for the current engine filter.</summary>
+    private void ApplyHistoryFilter()
+    {
+        if (HistoryGrid == null || HistoryChartCanvas == null) return;
+        string filter = (HistoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Engines";
+        IEnumerable<HistoryEntry> filtered = filter == "All Engines"
+            ? _history
+            : _history.Where(h => h.Engine == filter);
+        HistoryGrid.ItemsSource = new ObservableCollection<HistoryEntry>(filtered);
+        DrawHistoryChart(filtered);
+    }
+
+    private void DrawHistoryChart(IEnumerable<HistoryEntry> source)
+    {
+        var canvas = HistoryChartCanvas;
+        canvas.Children.Clear();
+        var items = source.Reverse().TakeLast(120).ToList();   // chronological, newest 120
+        HistoryTrendTitle.Text = $"TREND · {_history.Count} tests · showing {items.Count}";
+        double w = canvas.ActualWidth, h = canvas.ActualHeight;
+        if (w < 10 || h < 10) return;   // not laid out yet — SizeChanged will redraw
+        if (items.Count < 2)
+        {
+            var tb = new TextBlock
+            {
+                Text = "Run at least 2 tests to see the trend",
+                FontSize = 11,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#353550")!
+            };
+            canvas.Children.Add(tb);
+            tb.Measure(new Size(w, h));
+            Canvas.SetLeft(tb, Math.Max(0, (w - tb.ActualWidth) / 2));
+            Canvas.SetTop(tb, Math.Max(0, (h - tb.ActualHeight) / 2));
+            return;
+        }
+        double maxSpeed = Math.Max(items.Max(x => x.Download), items.Max(x => x.Upload));
+        if (maxSpeed <= 0) maxSpeed = 1;
+        double maxPing = Math.Max(items.Max(x => x.Ping), 1);
+
+        for (int i = 0; i <= 4; i++)
+            canvas.Children.Add(new Line
+            {
+                X1 = 0, Y1 = h * i / 4, X2 = w, Y2 = h * i / 4,
+                Stroke = new SolidColorBrush(Color.FromArgb(20, 120, 130, 160)), StrokeThickness = 1
+            });
+
+        Point Plot(int i, double v, double max) =>
+            new(3 + i * (w - 6) / (items.Count - 1), h - 8 - (v / max) * (h - 20));
+
+        AddPolyline(canvas, items.Select((x, i) => Plot(i, x.Download, maxSpeed)).ToList(), "#62CDFF", 2);
+        AddPolyline(canvas, items.Select((x, i) => Plot(i, x.Upload, maxSpeed)).ToList(), "#A78BFA", 2);
+        AddPolyline(canvas, items.Select((x, i) => Plot(i, x.Ping, maxPing)).ToList(), "#FFD740", 1.5);
+
+        canvas.Children.Add(new TextBlock
+        {
+            Text = maxSpeed.ToString("F0") + " Mbps", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")!
+        });
+        var pingLbl = new TextBlock
+        {
+            Text = maxPing.ToString("F0") + " ms", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")!
+        };
+        canvas.Children.Add(pingLbl);
+        pingLbl.Measure(new Size(w, h));
+        Canvas.SetLeft(pingLbl, w - pingLbl.ActualWidth - 6);
+        Canvas.SetTop(pingLbl, 4);
+    }
+
+    private static void AddPolyline(Canvas canvas, List<Point> pts, string color, double thick)
+    {
+        if (pts.Count < 2) return;
+        var fig = new PathFigure(pts[0], [], false);
+        for (int i = 1; i < pts.Count; i++) fig.Segments.Add(new LineSegment(pts[i], true));
+        var geo = new PathGeometry(); geo.Figures.Add(fig);
+        canvas.Children.Add(new Path
+        {
+            Data = geo,
+            Stroke = (Brush)new BrushConverter().ConvertFrom(color)!,
+            StrokeThickness = thick,
+            StrokeLineJoin = PenLineJoin.Round
+        });
     }
 
     private void SetProgress(int pct)
@@ -1227,13 +1372,26 @@ public partial class MainWindow : Window
         string input = WebsiteUrlInput.Text.Trim();
         if (input.Length == 0) { AddLog("Website: please enter a URL."); return; }
         string scheme = WebsiteScheme.SelectedIndex == 1 ? "http" : "https";
-        if (!input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            input = scheme + "://" + input;
-        if (!Uri.TryCreate(input, UriKind.Absolute, out var startUri) ||
-            (startUri.Scheme != "http" && startUri.Scheme != "https"))
+
+        // 批量：分号/逗号/空格/换行分隔多个网址（最多 8 个）；单个网址走 3 采样完整流程
+        var targets = new List<Uri>();
+        foreach (var raw in input.Split(new[] { ';', ',', '\n', '\r', '，', '；', '、', ' ' },
+                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            AddLog("Website: invalid URL '" + input + "'.");
+            string t = raw;
+            if (!t.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !t.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                t = scheme + "://" + t;
+            if (Uri.TryCreate(t, UriKind.Absolute, out var u) && (u.Scheme == "http" || u.Scheme == "https"))
+                targets.Add(u);
+            else
+                AddLog("Website: skipped invalid URL '" + raw + "'.");
+        }
+        targets = targets.Distinct().ToList();
+        if (targets.Count == 0)
+        {
+            SetWebsiteStatus("No valid URL.", "#F87171");
+            AddLog("Website: no valid URL.");
             return;
         }
 
@@ -1255,27 +1413,71 @@ public partial class MainWindow : Window
         WebsiteRunBtn.IsEnabled = false;
         WebsiteLogBox.Text = "";
         ResetWebsiteUI();
-        SetWebsiteStatus("Testing " + startUri.Authority + (proxy != null ? " via proxy " + proxy.Authority : "") + " …", "#FBBF24");
+        var startUri = targets[0];
+        string viaText = proxy != null ? " via proxy " + proxy.Authority : "";
+        SetWebsiteStatus("Testing " + startUri.Authority + viaText + " …", "#FBBF24");
         try
         {
-            const int samples = 3;
-            var results = new List<WebSample>(samples);
-            for (int i = 1; i <= samples; i++)
+            if (targets.Count == 1)
             {
-                SetWebsiteStatus($"Testing {startUri.Authority} … sample {i}/{samples}", "#FBBF24");
-                var s = await RunWebsiteSampleAsync(startUri, proxy);
-                results.Add(s);
-                ShowWebsiteSample(i, samples, s);
+                const int samples = 3;
+                var results = new List<WebSample>(samples);
+                for (int i = 1; i <= samples; i++)
+                {
+                    SetWebsiteStatus($"Testing {startUri.Authority} … sample {i}/{samples}", "#FBBF24");
+                    var s = await RunWebsiteSampleAsync(startUri, proxy);
+                    results.Add(s);
+                    ShowWebsiteSample(i, samples, s);
+                }
+                double avgTtfb = results.Average(r => r.TtfbMs);
+                double avgSpeed = results.Average(r => r.BodyBytes / Math.Max(0.001, r.ContentMs / 1000.0));
+                WebsiteSpeed.Text = FormatSpeed(avgSpeed);
+                WebsiteSpeedMbps.Text = "≈ " + (avgSpeed * 8 / 1_000_000.0).ToString("F1") + " Mbps";
+                WebsiteTtfb.Text = avgTtfb.ToString("F1");
+                SetWebsiteStatus("Complete · " + samples + " samples" + viaText +
+                                 " · " + results[^1].FinalUrl, "#4ADE80");
+                AddLog($"Website test done: {startUri} — avg {FormatSpeed(avgSpeed)}, TTFB {avgTtfb:F1} ms");
             }
-            double avgTtfb = results.Average(r => r.TtfbMs);
-            double avgSpeed = results.Average(r => r.BodyBytes / Math.Max(0.001, r.ContentMs / 1000.0));
-            WebsiteSpeed.Text = FormatSpeed(avgSpeed);
-            WebsiteSpeedMbps.Text = "≈ " + (avgSpeed * 8 / 1_000_000.0).ToString("F1") + " Mbps";
-            WebsiteTtfb.Text = avgTtfb.ToString("F1");
-            SetWebsiteStatus("Complete · " + samples + " samples" +
-                             (proxy != null ? " via proxy " + proxy.Authority : "") +
-                             " · " + results[^1].FinalUrl, "#4ADE80");
-            AddLog($"Website test done: {startUri} — avg {FormatSpeed(avgSpeed)}, TTFB {avgTtfb:F1} ms");
+            else
+            {
+                // ── Batch mode: 1 sample per site, comparison table ──
+                BatchCard.Visibility = Visibility.Visible;
+                _batchRows.Clear();
+                BatchGrid.ItemsSource = _batchRows;
+                int ok = 0;
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    SetWebsiteStatus($"Batch {i + 1}/{targets.Count}: {targets[i].Authority} …", "#FBBF24");
+                    try
+                    {
+                        var s = await RunWebsiteSampleAsync(targets[i], proxy);
+                        UpdateWebsiteUI(s);
+                        double sbps = s.BodyBytes / Math.Max(0.001, s.ContentMs / 1000.0);
+                        _batchRows.Add(new BatchRow(
+                            s.FinalUrl, s.StatusCode.ToString(),
+                            FormatSpeed(sbps) + " (" + (sbps * 8 / 1_000_000.0).ToString("F1") + " Mbps)",
+                            s.TtfbMs.ToString("F1") + " ms", FormatBytes(s.BodyBytes),
+                            s.TotalMs.ToString("F0") + " ms",
+                            s.Via.Length > 0 ? "proxy " + s.Via : "direct"));
+                        WebsiteLogBox.AppendText(
+                            $"[batch {i + 1}/{targets.Count}] {s.StatusCode} {s.FinalUrl}" +
+                            $" | {FormatSpeed(sbps)} | TTFB {s.TtfbMs:F1} ms" +
+                            (s.Via.Length > 0 ? $" · via proxy {s.Via}" : "") + "\r\n");
+                        ok++;
+                    }
+                    catch (Exception bex)
+                    {
+                        _batchRows.Add(new BatchRow(targets[i].ToString(), "FAILED", "-", "-", "-", "-",
+                            proxy != null ? "proxy " + proxy.Authority : "direct"));
+                        WebsiteLogBox.AppendText(
+                            $"[batch {i + 1}/{targets.Count}] FAILED {targets[i]} — {bex.Message}\r\n");
+                    }
+                    WebsiteLogBox.ScrollToEnd();
+                }
+                SetWebsiteStatus($"Complete · batch {ok}/{targets.Count} sites" + viaText,
+                    ok == targets.Count ? "#4ADE80" : "#FBBF24");
+                AddLog($"Website batch test done: {ok}/{targets.Count} succeeded");
+            }
         }
         catch (Exception ex)
         {
@@ -1365,8 +1567,9 @@ public partial class MainWindow : Window
                 string hostHeader = uri.IsDefaultPort ? uri.Host : uri.Authority;
                 string req = $"GET {uri.PathAndQuery} HTTP/1.1\r\n" +
                              $"Host: {hostHeader}\r\n" +
-                             "User-Agent: SpeedPro-WebsiteTest/3.5\r\n" +
+                             "User-Agent: SpeedPro-WebsiteTest/3.7\r\n" +
                              "Accept: */*\r\n" +
+                             "Accept-Encoding: gzip, deflate\r\n" +
                              "Connection: close\r\n\r\n";
                 var reqBytes = Encoding.ASCII.GetBytes(req);
                 var totalSw = Stopwatch.StartNew();
@@ -1489,8 +1692,13 @@ public partial class MainWindow : Window
             $" | {FormatBytes(s.BodyBytes)} in {s.TotalMs:F0} ms | {FormatSpeed(speedBps)} ({speedMbps:F1} Mbps)" +
             $" | DNS {s.DnsMs:F1} · TCP {s.TcpMs:F1} · TLS {(s.TlsMs > 0 ? s.TlsMs.ToString("F1") : "—")} · TTFB {s.TtfbMs:F1} ms" +
             (s.Via.Length > 0 ? $" · via proxy {s.Via}" : "") + "\r\n");
-        if (sample == total) WebsiteLogBox.ScrollToEnd();
+        UpdateWebsiteUI(s);
+    }
 
+    /// <summary>Pushes one sample into the hero numbers, timeline bars and response info.</summary>
+    private void UpdateWebsiteUI(WebSample s)
+    {
+        double speedBps = s.BodyBytes / Math.Max(0.001, s.ContentMs / 1000.0);
         // Timeline (last sample breakdown)
         double totalRef = Math.Max(1, s.TotalMs);
         WebValDns.Text = s.DnsMs.ToString("F1") + " ms";
@@ -1513,8 +1721,17 @@ public partial class MainWindow : Window
         WebInfoSize.Text = FormatBytes(s.BodyBytes);
         WebInfoRedirects.Text = s.Redirects.ToString();
         WebsiteSpeed.Text = FormatSpeed(speedBps);
-        WebsiteSpeedMbps.Text = "≈ " + speedMbps.ToString("F1") + " Mbps";
+        WebsiteSpeedMbps.Text = "≈ " + (speedBps * 8 / 1_000_000.0).ToString("F1") + " Mbps";
         WebsiteTtfb.Text = s.TtfbMs.ToString("F1");
+    }
+
+    private sealed record BatchRow(string Url, string Status, string Speed, string Ttfb, string Size, string Total, string Connection);
+
+    private readonly ObservableCollection<BatchRow> _batchRows = new();
+
+    private void BatchGrid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
+    {
+        if (e.PropertyName == "Url") e.Column.Width = new DataGridLength(2, DataGridLengthUnitType.Star);
     }
 
     private void ResetWebsiteUI()
@@ -1522,6 +1739,8 @@ public partial class MainWindow : Window
         WebsiteSpeed.Text = "--";
         WebsiteSpeedMbps.Text = "";
         WebsiteTtfb.Text = "--";
+        BatchCard.Visibility = Visibility.Collapsed;
+        _batchRows.Clear();
         foreach (var el in new[] { WebValDns, WebValTcp, WebValTls, WebValTtfb, WebValContent, WebValTotal })
             el.Text = "--";
         foreach (var b in new[] { WebBarDns, WebBarTcp, WebBarTls, WebBarTtfb, WebBarContent })
@@ -1612,22 +1831,16 @@ public partial class MainWindow : Window
     private void PingularityClearLog_Click(object? sender, RoutedEventArgs e) => PingularityLogBox.Text = "";
 
     // ── History ─────────────────────────────────────────────────────────────
-    private void HistoryFilter_Changed(object? sender, RoutedEventArgs e)
+    private void HistoryFilter_Changed(object? sender, SelectionChangedEventArgs e)
     {
-        var sel = HistoryFilter.SelectedItem as ComboBoxItem;
-        if (sel?.Content == null) return;
-        string filter = sel.Content.ToString() ?? "All Engines";
-        var filtered = filter == "All Engines"
-            ? _history
-            : new ObservableCollection<HistoryEntry>(_history.Where(h => h.Engine == filter));
-        if (HistoryGrid != null) { HistoryGrid.ItemsSource = null; HistoryGrid.ItemsSource = filtered; }
+        ApplyHistoryFilter();
     }
 
     private void ClearHistory_Click(object? sender, RoutedEventArgs e)
     {
         _history.Clear();
-        HistoryGrid.ItemsSource = null;
-        HistoryGrid.ItemsSource = _history;
+        PersistHistory();
+        ApplyHistoryFilter();
         AddLog("History cleared");
     }
 
@@ -1748,6 +1961,7 @@ public partial class MainWindow : Window
         SetAboutTitle.Text      = Loc.Get("set.about");
         SetSystemTitle.Text     = Loc.Get("set.system");
         SetActionsTitle.Text    = Loc.Get("set.actions");
+        CheckUpdateBtn.Content  = Loc.Get("set.checkupdate");
         OpenLogBtn.Content      = Loc.Get("set.openlog");
         RefreshBtn.Content      = Loc.Get("set.refresh");
 
@@ -1771,6 +1985,87 @@ public partial class MainWindow : Window
                 tb.Text = Loc.Get(key);
             LocalizeTree(child, key, match);
         }
+    }
+
+    // ── Update check (GitHub Releases) ─────────────────────────────────────
+    private string? _latestTag;
+    private const string ReleasesPageUrl = "https://github.com/narci2018/SpeedTest/releases/latest";
+
+    private static string CurrentAppVersion =>
+        (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 7, 0)).ToString(3);
+
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (manual) { CheckUpdateBtn.Content = "Checking…"; CheckUpdateBtn.IsEnabled = false; }
+        string? newTag = null, error = null;
+        try
+        {
+            // Task.Run + WhenAny：DNS 解析在断网环境下可能同步挂起且不可取消，
+            // HttpClient.Timeout 对它无效——用外层超时兜底保证 UI 一定能得到结果。
+            var check = Task.Run(async () =>
+            {
+                using var http = new HttpClient();
+                http.Timeout = TimeSpan.FromSeconds(8);
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("SpeedPro-UpdateCheck");
+                string json = await http.GetStringAsync("https://api.github.com/repos/narci2018/SpeedTest/releases/latest");
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                return doc.RootElement.GetProperty("tag_name").GetString() ?? "";
+            });
+            var done = await Task.WhenAny(check, Task.Delay(TimeSpan.FromSeconds(10)));
+            if (done != check) throw new TimeoutException("检查超时（>10s）— 网络不可达或 DNS 挂起");
+            newTag = (await check).TrimStart('v');
+        }
+        catch (Exception ex) { error = ex.Message; }
+
+        string current = CurrentAppVersion;
+        if (error == null)
+        {
+            var latest = new Version(newTag!);
+            var cur = new Version(current);
+            if (latest > cur)
+            {
+                _latestTag = newTag;
+                StatusRight.Text = "新版本 " + newTag + " 可用 — 点击此处下载";
+                StatusRight.Foreground = (Brush)new BrushConverter().ConvertFrom("#4ADE80")!;
+                if (manual)
+                    MessageBox.Show("发现新版本 " + newTag + "（当前 v" + current + "）。\n点击主窗口状态栏右侧的提示文字即可打开下载页。",
+                        "SpeedPro", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                _latestTag = null;
+                if (manual)
+                    MessageBox.Show("已是最新版本（v" + current + "）。", "SpeedPro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        else if (manual)
+            MessageBox.Show("检查更新失败：" + error + "\n（需要能够访问 api.github.com，或在 设置 → 代理服务器 配置后重试）",
+                "SpeedPro", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+        if (manual)
+        {
+            CheckUpdateBtn.Content = Loc.Get("set.checkupdate");
+            CheckUpdateBtn.IsEnabled = true;
+        }
+    }
+
+    private async void CheckUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        CheckUpdateBtn.IsEnabled = false;
+        await CheckForUpdatesAsync(manual: true);
+        CheckUpdateBtn.IsEnabled = true;
+    }
+
+    private void StatusRight_Click(object? sender, MouseButtonEventArgs e)
+    {
+        if (_latestTag == null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ReleasesPageUrl)
+            { UseShellExecute = true });
+        }
+        catch { }
     }
 
     private void OpenLogDir_Click(object? sender, RoutedEventArgs e)

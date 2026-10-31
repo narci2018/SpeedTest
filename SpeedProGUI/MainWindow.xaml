@@ -1,0 +1,1352 @@
+﻿<Window x:Class="SpeedPro.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SpeedPro v3.6 — Network Performance Suite"
+        Width="1520" Height="960"
+        MinWidth="1200" MinHeight="760"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip"
+        Closing="Window_Closing">
+
+  <!-- WPF native title bar (Mica-like surface) -->
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="0"
+                  CornerRadius="0"
+                  GlassFrameThickness="-1"
+                  UseAeroCaptionButtons="False"/>
+  </WindowChrome.WindowChrome>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="228"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- ══════════════════════════ SIDEBAR ══════════════════════════ -->
+    <Border Grid.Column="0"
+            Background="{DynamicResource PanelBrush}"
+            BorderBrush="{DynamicResource StrokeBrush}"
+            BorderThickness="0,0,1,0">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="64"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="52"/>
+        </Grid.RowDefinitions>
+
+        <!-- Logo -->
+        <Border Grid.Row="0"
+                Background="Transparent"
+                BorderBrush="{DynamicResource StrokeSoftBrush}"
+                BorderThickness="0,0,0,1">
+          <StackPanel Orientation="Horizontal" Margin="18,0">
+            <!-- Speed icon badge -->
+            <Border Width="36" Height="36" Background="{DynamicResource AccentFillBrush}"
+                    CornerRadius="9" HorizontalAlignment="Left" VerticalAlignment="Center">
+              <Path Data="{StaticResource IcoSpeed}" Stroke="{DynamicResource AccentBrush}"
+                    StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                    Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+              <TextBlock Text="SpeedPro" Foreground="{DynamicResource TextBrush}"
+                         FontSize="15" FontWeight="SemiBold" FontFamily="{StaticResource UiFont}"/>
+              <TextBlock x:Name="SideSuite" Text="Network Suite" Foreground="{DynamicResource TextDimBrush}"
+                         FontSize="10" FontFamily="{StaticResource UiFont}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Nav label -->
+        <TextBlock x:Name="SideModules" Grid.Row="1" Text="MODULES"
+                   Foreground="{DynamicResource TextDimBrush}"
+                   FontSize="10.5" FontWeight="SemiBold"
+                   FontFamily="{StaticResource UiFont}"
+                   Margin="22,16,0,10" TextTrimming="CharacterEllipsis"/>
+
+        <!-- Nav rail -->
+        <StackPanel Grid.Row="2" Margin="8,0,8,0">
+          <RadioButton x:Name="NavTest"    Content="Broadband Test"   Tag="{StaticResource IcoSpeed}"   Style="{StaticResource NavRailItem}" Click="Nav_Click" IsChecked="True" Margin="0,2"/>
+          <RadioButton x:Name="NavWebsite" Content="Website Test"     Tag="{StaticResource IcoGlobe}"     Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavIperf3"  Content="Iperf3 Throughput" Tag="{StaticResource IcoThroughput}" Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavEthr"    Content="Ethr Benchmark"    Tag="{StaticResource IcoBenchmark}" Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavPing"    Content="Pingularity"       Tag="{StaticResource IcoPing}"      Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavHistory" Content="History"           Tag="{StaticResource IcoHistory}"   Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavSettings" Content="Settings"          Tag="{StaticResource IcoSettings}"  Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+        </StackPanel>
+
+        <!-- Live status -->
+        <Border Grid.Row="3" Background="{DynamicResource CardBrush}"
+                BorderBrush="{DynamicResource StrokeSoftBrush}"
+                BorderThickness="0,1,0,0" Padding="16,14">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="#6F7686"
+                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+              <TextBlock x:Name="LiveStatusText" Text="Idle"
+                         FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                         FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"
+                         Grid.Column="1"/>
+            </Grid>
+            <TextBlock x:Name="LiveIpText" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                       FontFamily="{StaticResource UiFont}" Margin="0,6,0,0" Text="IP: unknown"
+                       TextWrapping="Wrap"/>
+            <TextBlock x:Name="LiveIspText" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                       FontFamily="{StaticResource UiFont}" Margin="0,3,0,0" Text="ISP: unknown"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Footer -->
+        <TextBlock Grid.Row="4" Text="v3.6 · 5 Engines"
+                   FontSize="10" Foreground="{DynamicResource TextDimBrush}"
+                   FontFamily="{StaticResource UiFont}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <!-- ══════════════════════════ MAIN CONTENT ══════════════════════════ -->
+    <Grid Grid.Column="1" Background="{DynamicResource BgBrush}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="40"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="28"/>
+      </Grid.RowDefinitions>
+
+      <!-- ── Title bar ── -->
+      <Border x:Name="TitleBar" Background="{DynamicResource TitleBarBrush}"
+              Height="40" VerticalAlignment="Top">
+        <Grid>
+          <TextBlock x:Name="HeaderTitle"
+                     Text="Broadband Test" FontSize="13"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     FontFamily="{StaticResource UiFont}"
+                     VerticalAlignment="Center" Margin="16,0,0,0"/>
+          <StackPanel Orientation="Horizontal"
+                      HorizontalAlignment="Right" VerticalAlignment="Stretch">
+            <!-- Language toggle -->
+            <Button x:Name="LangBtn" Content="EN" FontSize="11" FontWeight="SemiBold"
+                    Height="30" Padding="10,0" Margin="0,0,6,0"
+                    Background="Transparent" BorderBrush="{DynamicResource StrokeSoftBrush}"
+                    BorderThickness="1" Foreground="{DynamicResource TextMutedBrush}"
+                    FontFamily="{StaticResource UiFont}" Click="LangToggle_Click"/>
+            <!-- Theme quick switch (click to cycle) -->
+            <Button x:Name="ThemeBtn" Content="◐" FontSize="14"
+                    Height="30" Width="30" Margin="0,0,10,0"
+                    Background="Transparent" BorderBrush="{DynamicResource StrokeSoftBrush}"
+                    BorderThickness="1" Foreground="{DynamicResource TextMutedBrush}"
+                    FontFamily="{StaticResource UiFont}" Click="ThemeToggle_Click"/>
+            <Button Content="—" FontSize="10" Style="{StaticResource CaptionBtn}"
+                    Width="46" Height="40" Click="Minimize_Click"/>
+            <Button Content="□" FontSize="10" Style="{StaticResource CaptionBtn}"
+                    Width="46" Height="40" Click="Maximize_Click"/>
+            <Button Content="✕" FontSize="11" Style="{StaticResource CloseCaptionBtn}"
+                    Width="46" Height="40" Click="Close_Click"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- ── Main layout: scrollable content + fixed bottom log ── -->
+      <Grid Grid.Row="1" Margin="0,42,0,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="1*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Scrollable upper content -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <Grid Margin="24">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+
+          <!-- ════════════════════ BROADBAND TEST PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelTest" Grid.Row="0" Visibility="Visible">
+
+            <!-- Top row: header + engine selector + start button -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" Padding="16,12">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="QuickTitle" Grid.Column="0" Text="Quick Test" FontSize="15"
+                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                           FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                  <!-- Engine segmented picker -->
+                  <Border Background="{DynamicResource CardSunkenBrush}"
+                          BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1"
+                          CornerRadius="8" Padding="3">
+                    <StackPanel Orientation="Horizontal">
+                      <RadioButton x:Name="EngineLibreSpeed" Content="LibreSpeed"
+                                   Style="{StaticResource SegmentedBtn}" IsChecked="True"
+                                   Click="EngineChanged"/>
+                      <RadioButton x:Name="EngineSpeedTestGo" Content="speedtest-go"
+                                   Style="{StaticResource SegmentedBtn}"
+                                   Click="EngineChanged"/>
+                    </StackPanel>
+                  </Border>
+                  <!-- Server input -->
+                  <TextBox x:Name="ServerInput" Width="240" Height="32"
+                           Margin="12,0,0,0" FontSize="12" Padding="10,6"
+                           Text=""
+                           VerticalAlignment="Center"/>
+                  <!-- Start button -->
+                  <Button x:Name="StartBtn" Content="▶ Start Test"
+                          Style="{StaticResource PrimaryBtn}" Height="32" Padding="24,0"
+                          Margin="12,0,0,0" Click="StartTest_Click"
+                          FontFamily="{StaticResource UiFont}"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+
+            <!-- Middle row: charts | gauge | info -->
+            <Grid Margin="0,0,0,16">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="360" MinWidth="300"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="Auto" MinWidth="300"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="260" MinWidth="220"/>
+              </Grid.ColumnDefinitions>
+
+              <!-- LEFT: Dual charts -->
+              <StackPanel Grid.Column="0">
+                <!-- Download chart -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                      <TextBlock x:Name="DlChartTitle" Text="Download Speed" FontSize="12"
+                                 FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock x:Name="DLChartPeak" Text="Peak: -- Mbps" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <Canvas x:Name="DLChartCanvas" Height="120"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+                <!-- Upload chart -->
+                <Border Style="{StaticResource Card}">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                      <TextBlock x:Name="UlChartTitle" Text="Upload Speed" FontSize="12"
+                                 FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock x:Name="ULChartPeak" Text="Peak: -- Mbps" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <Canvas x:Name="ULChartCanvas" Height="120"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- CENTER: Gauge + 4 metrics -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                <!-- Hero gauge -->
+                <Border Style="{StaticResource CardHero}" Margin="0,0,0,16">
+                  <StackPanel HorizontalAlignment="Center">
+                    <Canvas x:Name="GaugeCanvas" Width="220" Height="220"/>
+                    <StackPanel HorizontalAlignment="Center" Margin="0,4,0,0">
+                      <TextBlock x:Name="GaugeValue" Text="0.00"
+                                 Style="{StaticResource ValueBig}" FontSize="38"
+                                 Foreground="{DynamicResource AccentBrush}"/>
+                      <TextBlock Text="Mbps Download" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}"
+                                 HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- 4 metric cards -->
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1*"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1*"/>
+                  </Grid.ColumnDefinitions>
+
+                  <!-- Download -->
+                  <Border Grid.Column="0" Style="{StaticResource Card}" Padding="16,14">
+                    <StackPanel>
+                      <TextBlock Text="DOWNLOAD" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <TextBlock x:Name="MetricDL" Text="--" FontSize="30"
+                                 FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
+                                 FontFamily="{StaticResource UiFont}"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Mbps" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Border Height="3" CornerRadius="2" Background="{DynamicResource StrokeSoftBrush}"
+                              Margin="0,10,0,0"><Border x:Name="DLBar" Height="3" CornerRadius="2"
+                                                         Background="{DynamicResource AccentBrush}" Width="0"/></Border>
+                    </StackPanel>
+                  </Border>
+                  <!-- Upload -->
+                  <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,14">
+                    <StackPanel>
+                      <TextBlock Text="UPLOAD" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <TextBlock x:Name="MetricUL" Text="--" FontSize="30"
+                                 FontWeight="Bold" Foreground="{DynamicResource Accent2Brush}"
+                                 FontFamily="{StaticResource UiFont}"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Mbps" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Border Height="3" CornerRadius="2" Background="{DynamicResource StrokeSoftBrush}"
+                              Margin="0,10,0,0"><Border x:Name="ULBar" Height="3" CornerRadius="2"
+                                                         Background="{DynamicResource Accent2Brush}" Width="0"/></Border>
+                    </StackPanel>
+                  </Border>
+                  <!-- Ping -->
+                  <Border Grid.Column="4" Style="{StaticResource Card}" Padding="16,14">
+                    <StackPanel>
+                      <TextBlock Text="PING" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <TextBlock x:Name="MetricPing" Text="--" FontSize="30"
+                                 FontWeight="Bold" Foreground="{DynamicResource WarnBrush}"
+                                 FontFamily="{StaticResource UiFont}"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="ms avg" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                    </StackPanel>
+                  </Border>
+                  <!-- Jitter -->
+                  <Border Grid.Column="6" Style="{StaticResource Card}" Padding="16,14">
+                    <StackPanel>
+                      <TextBlock Text="JITTER" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <TextBlock x:Name="MetricJitter" Text="--" FontSize="30"
+                                 FontWeight="Bold" Foreground="#FF6BFA"
+                                 FontFamily="{StaticResource UiFont}"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="ms std" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+
+              <!-- RIGHT: Connection info + quality -->
+              <StackPanel Grid.Column="4" VerticalAlignment="Top">
+                <!-- Connection card -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="16">
+                  <StackPanel>
+                    <TextBlock x:Name="ConnTitle" Text="CONNECTION" FontSize="11"
+                               FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/>
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="IP" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InfoIP" Text="--"
+                                 FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="ISP" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="InfoISP" Text="--"
+                                 FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="2" Grid.Column="0" Text="Server" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="InfoServer" Text="--"
+                                 FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="3" Grid.Column="0" Text="Country" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="3" Grid.Column="1" x:Name="InfoCountry" Text="--"
+                                 FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <!-- Quality score card -->
+                <Border Style="{StaticResource Card}">
+                  <StackPanel>
+                    <TextBlock x:Name="ScoreTitle" Text="QUALITY SCORE" FontSize="11"
+                               FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <!-- Ring gauge -->
+                      <Border Grid.Column="0" x:Name="ScoreRingBorder" Width="72" Height="72"
+                              BorderBrush="{DynamicResource AccentBrush}" BorderThickness="6"
+                              CornerRadius="36" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="ScoreRingText" Text="--" FontSize="22"
+                                   FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
+                                   FontFamily="{StaticResource UiFont}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextOptions.TextFormattingMode="Display"/>
+                      </Border>
+                      <!-- Details -->
+                      <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="QualityLabel" Text="Run a test" FontSize="13"
+                                   FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
+                                   FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock Text="Connection quality" FontSize="10"
+                                   Foreground="{DynamicResource TextDimBrush}"
+                                   FontFamily="{StaticResource UiFont}" Margin="0,2,0,0"/>
+                        <StackPanel Margin="0,10,0,0">
+                          <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Download" FontSize="10" Foreground="{DynamicResource TextDimBrush}"
+                                       FontFamily="{StaticResource UiFont}"/>
+                            <Border Grid.Column="1" Height="3" CornerRadius="2"
+                                    Background="{DynamicResource StrokeSoftBrush}" Margin="6,0,0,0">
+                              <Border x:Name="QBarDL" Height="3" CornerRadius="2"
+                                      Background="{DynamicResource AccentBrush}" Width="0"/>
+                            </Border>
+                          </Grid>
+                          <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Upload" FontSize="10" Foreground="{DynamicResource TextDimBrush}"
+                                       FontFamily="{StaticResource UiFont}"/>
+                            <Border Grid.Column="1" Height="3" CornerRadius="2"
+                                    Background="{DynamicResource StrokeSoftBrush}" Margin="6,0,0,0">
+                              <Border x:Name="QBarUL" Height="3" CornerRadius="2"
+                                      Background="{DynamicResource Accent2Brush}" Width="0"/>
+                            </Border>
+                          </Grid>
+                          <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Latency" FontSize="10" Foreground="{DynamicResource TextDimBrush}"
+                                       FontFamily="{StaticResource UiFont}"/>
+                            <Border Grid.Column="1" Height="3" CornerRadius="2"
+                                    Background="{DynamicResource StrokeSoftBrush}" Margin="6,0,0,0">
+                              <Border x:Name="QBarPing" Height="3" CornerRadius="2"
+                                      Background="{DynamicResource WarnBrush}" Width="0"/>
+                            </Border>
+                          </Grid>
+                          <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Stability" FontSize="10" Foreground="{DynamicResource TextDimBrush}"
+                                       FontFamily="{StaticResource UiFont}"/>
+                            <Border Grid.Column="1" Height="3" CornerRadius="2"
+                                    Background="{DynamicResource StrokeSoftBrush}" Margin="6,0,0,0">
+                              <Border x:Name="QBarJitter" Height="3" CornerRadius="2"
+                                      Background="#FF6BFA" Width="0"/>
+                            </Border>
+                          </Grid>
+                        </StackPanel>
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        <!-- ════════════════════ IPERF3 PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelIperf3" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <!-- Left: Controls -->
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="IPERF3 SERVER" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Host" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="Iperf3HostInput" FontSize="12" Padding="10,6"
+                               Text="127.0.0.1" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="Port" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="Iperf3PortInput" FontSize="12" Padding="10,6"
+                               Width="60" Text="5201" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="Iperf3ServerBtn" Content="Start Server" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" Margin="0,0,0,8" Click="Iperf3Server_Click" Width="150"/>
+                    <TextBlock x:Name="Iperf3ServerStatus" Text="Server: stopped" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="IPERF3 CLIENT TEST" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource SuccessBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Host" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="Iperf3HostClient" FontSize="12" Padding="10,6"
+                               Text="127.0.0.1" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="Streams" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="Iperf3Threads" FontSize="12" Padding="10,6"
+                               Width="50" Text="2" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Duration" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="Iperf3Duration2" FontSize="12" Padding="10,6"
+                               Text="5" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="BufKB" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="Iperf3BufSize" FontSize="12" Padding="10,6"
+                               Width="50" Text="128" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Protocol" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="Iperf3Proto" FontSize="12" Padding="10,6"
+                                SelectedIndex="0" VerticalAlignment="Center">
+                        <ComboBoxItem Content="TCP"/><ComboBoxItem Content="UDP"/>
+                      </ComboBox>
+                      <TextBlock Grid.Column="3" Text="Port" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="Iperf3PortClient" FontSize="12" Padding="10,6"
+                               Width="60" Text="5201" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="Iperf3RunBtn" Content="Run Test" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" Click="Iperf3Run_Click"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Height="200">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="RAW OUTPUT" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Button Content="Clear" Style="{StaticResource GhostBtn}"
+                              HorizontalAlignment="Right" Click="Iperf3ClearLog_Click"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="Iperf3LogBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                               HorizontalScrollBarVisibility="Auto" IsReadOnly="True" Padding="10" MaxHeight="155"
+                               VerticalContentAlignment="Top"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <!-- Right: Results -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource CardHero}" Margin="0,0,0,12">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                      <TextBlock x:Name="Iperf3Throughput" Text="--" FontSize="44" FontWeight="Bold"
+                                 Foreground="{DynamicResource SuccessBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Mbps Throughput" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                      <TextBlock x:Name="Iperf3ResultDuration" Text="--" FontSize="44" FontWeight="Bold"
+                                 Foreground="{DynamicResource WarnBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="seconds" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="TEST CONFIG" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent2Brush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,10"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                      <StackPanel Grid.Column="0">
+                        <TextBlock x:Name="Iperf3ProtoLabel" Text="Protocol: TCP" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock x:Name="Iperf3StreamsLabel" Text="Streams: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" Margin="0,4,0,0"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="Iperf3Bytes" Text="Data: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock x:Name="Iperf3Cpu" Text="CPU: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" Margin="0,4,0,0"/>
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- ════════════════════ ETHR PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelEthr" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="ETHR SERVER" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Host" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="EthrHostInput" FontSize="12" Padding="10,6"
+                               Text="127.0.0.1" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="Port" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="EthrPortInput" FontSize="12" Padding="10,6"
+                               Width="60" Text="8888" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="EthrServerBtn" Content="Start Server" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" Margin="0,0,0,8" Click="EthrServer_Click" Width="150"/>
+                    <TextBlock x:Name="EthrServerStatus" Text="Server: stopped" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="ETHR CLIENT TEST" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource SuccessBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Host" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="EthrClientHost" FontSize="12" Padding="10,6"
+                               Text="127.0.0.1" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="Threads" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <TextBox Grid.Column="4" x:Name="EthrThreads" FontSize="12" Padding="10,6"
+                               Width="50" Text="4" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Duration" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="EthrDuration" FontSize="12" Padding="10,6"
+                               Text="5s" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3" Text="Proto" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                      <ComboBox Grid.Column="4" x:Name="EthrProtocol" FontSize="12" Padding="10,6"
+                                Width="70" SelectedIndex="0" VerticalAlignment="Center">
+                        <ComboBoxItem Content="TCP"/><ComboBoxItem Content="UDP"/>
+                      </ComboBox>
+                    </Grid>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Port" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="EthrClientPort" FontSize="12" Padding="10,6"
+                               Width="60" HorizontalAlignment="Left" Text="8888" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="EthrRunBtn" Content="Run Test" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" Click="EthrRun_Click"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Height="220">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="RAW OUTPUT" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Button Content="Clear" Style="{StaticResource GhostBtn}"
+                              HorizontalAlignment="Right" Click="EthrClearLog_Click"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="EthrLogBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                               HorizontalScrollBarVisibility="Auto" IsReadOnly="True" Padding="10" MaxHeight="175"
+                               VerticalContentAlignment="Top"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource CardHero}" Margin="0,0,0,12">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                      <TextBlock x:Name="EthrThroughput" Text="--" FontSize="44" FontWeight="Bold"
+                                 Foreground="{DynamicResource SuccessBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Mbps Throughput" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                      <TextBlock x:Name="EthrTime" Text="--" FontSize="44" FontWeight="Bold"
+                                 Foreground="{DynamicResource WarnBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="seconds" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="CONNECTION STATS" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent2Brush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,10"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                      <StackPanel Grid.Column="0">
+                        <TextBlock x:Name="EthrConnSent" Text="Sent: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock x:Name="EthrConnRecv" Text="Received: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" Margin="0,3,0,0"/>
+                        <TextBlock x:Name="EthrConnLost" Text="Lost: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" Margin="0,3,0,0"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="EthrLossRate" Text="Loss rate: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock x:Name="EthrConnections" Text="Connections: --" FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" Margin="0,3,0,0"/>
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <TextBlock x:Name="EthrSummary" Text="Run a test to see results" FontSize="12"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- ════════════════════ WEBSITE SPEED PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelWebsite" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <!-- Left: Controls + timeline + raw output -->
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="WEBSITE SPEED TEST" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="URL" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="WebsiteUrlInput" FontSize="12" Padding="10,6"
+                               Text="www.baidu.com" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Scheme" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="WebsiteScheme" FontSize="12" Padding="10,6"
+                                Width="100" HorizontalAlignment="Left" SelectedIndex="0" VerticalAlignment="Center">
+                        <ComboBoxItem Content="HTTPS"/><ComboBoxItem Content="HTTP"/>
+                      </ComboBox>
+                      <Button Grid.Column="2" x:Name="WebsiteRunBtn" Content="Start Test" Style="{StaticResource PrimaryBtn}"
+                              Height="32" Padding="20,0" MinWidth="130" Click="WebsiteRun_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="WebsiteStatus" Text="Idle" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                    <TextBlock x:Name="WebsiteProxyHint" Text="Tip: to test a blocked site, set a proxy in Settings → Proxy Server first."
+                               FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="REQUEST TIMELINE" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,10"/>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="DNS" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValDns" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource StrokeSoftBrush}" VerticalAlignment="Center">
+                        <Border x:Name="WebBarDns" Height="6" CornerRadius="3" Background="{DynamicResource Accent2Brush}" HorizontalAlignment="Left" Width="0"/>
+                      </Border>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="TCP" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValTcp" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource StrokeSoftBrush}" VerticalAlignment="Center">
+                        <Border x:Name="WebBarTcp" Height="6" CornerRadius="3" Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" Width="0"/>
+                      </Border>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="TLS" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValTls" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource StrokeSoftBrush}" VerticalAlignment="Center">
+                        <Border x:Name="WebBarTls" Height="6" CornerRadius="3" Background="{DynamicResource SuccessBrush}" HorizontalAlignment="Left" Width="0"/>
+                      </Border>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="TTFB" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValTtfb" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource StrokeSoftBrush}" VerticalAlignment="Center">
+                        <Border x:Name="WebBarTtfb" Height="6" CornerRadius="3" Background="{DynamicResource WarnBrush}" HorizontalAlignment="Left" Width="0"/>
+                      </Border>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="Content" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValContent" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource StrokeSoftBrush}" VerticalAlignment="Center">
+                        <Border x:Name="WebBarContent" Height="6" CornerRadius="3" Background="#FF6BFA" HorizontalAlignment="Left" Width="0"/>
+                      </Border>
+                    </Grid>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="Total" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Column="1" x:Name="WebValTotal" Text="--" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+                      <TextBlock Grid.Column="2" x:Name="WebSamplesLabel" Text="3 samples · last request breakdown" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
+                                 HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Height="200">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="RAW OUTPUT" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Button Content="Clear" Style="{StaticResource GhostBtn}"
+                              HorizontalAlignment="Right" Click="WebsiteClearLog_Click"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="WebsiteLogBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                               HorizontalScrollBarVisibility="Auto" IsReadOnly="True" Padding="10" MaxHeight="155"
+                               VerticalContentAlignment="Top"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <!-- Right: hero + response info + about -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource CardHero}" Margin="0,0,0,12">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                      <TextBlock x:Name="WebsiteSpeed" Text="--" FontSize="40" FontWeight="Bold"
+                                 Foreground="{DynamicResource SuccessBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Download Speed" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                      <TextBlock x:Name="WebsiteSpeedMbps" Text="" FontSize="11" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource SuccessBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                      <TextBlock x:Name="WebsiteTtfb" Text="--" FontSize="40" FontWeight="Bold"
+                                 Foreground="{DynamicResource WarnBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="First Byte TTFB (ms)" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="RESPONSE INFO" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent2Brush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,10"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="84"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="24"/><RowDefinition Height="24"/>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="Final URL" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="WebInfoUrl" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" TextWrapping="Wrap"/>
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="Status" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="WebInfoStatus" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="2" Grid.Column="0" Text="IP" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="WebInfoIp" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="3" Grid.Column="0" Text="Server" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="3" Grid.Column="1" x:Name="WebInfoServer" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="4" Grid.Column="0" Text="Content" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="4" Grid.Column="1" x:Name="WebInfoType" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="5" Grid.Column="0" Text="Body Size" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="5" Grid.Column="1" x:Name="WebInfoSize" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="6" Grid.Column="0" Text="Redirects" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="6" Grid.Column="1" x:Name="WebInfoRedirects" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="ABOUT THIS TEST" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,10"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               LineHeight="21" FontFamily="{StaticResource UiFont}">
+                      Measures the real experience of visiting a website: DNS lookup, TCP connect,
+                      TLS handshake, time-to-first-byte (TTFB) and single-connection download speed.<LineBreak/>
+                      3 polite sequential requests are made — this reflects the network path and CDN
+                      edge, not the target server's total bandwidth.
+                    </TextBlock>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- ════════════════════ PINGULARITY PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelPingularity" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="PINGULARITY SERVICE" FontSize="13" FontWeight="SemiBold"
+                               Foreground="#A78BFA" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Port" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="PingularityPort" FontSize="12" Padding="10,6"
+                               Text="19000" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Button x:Name="PingularityStartBtn" Content="Start Service" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" Margin="0,0,0,8" Click="PingularityStart_Click" Width="160"/>
+                    <TextBlock x:Name="PingularityStatus" Text="Service: stopped" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" Margin="0,4,0,0"/>
+                    <Button Content="Open Dashboard" Style="{StaticResource SecondaryBtn}"
+                            Height="32" Padding="16,0" Margin="0,10,0,0" Click="PingularityOpenDashboard_Click" Width="160"/>
+                    <TextBlock x:Name="PingularityDashUrl" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Height="240">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="SERVICE LOG" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource UiFont}"/>
+                      <Button Content="Clear" Style="{StaticResource GhostBtn}"
+                              HorizontalAlignment="Right" Click="PingularityClearLog_Click"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="PingularityLogBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                               HorizontalScrollBarVisibility="Auto" IsReadOnly="True" Padding="10" MaxHeight="190"
+                               VerticalContentAlignment="Top"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="ABOUT PINGULARITY" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               LineHeight="22" FontFamily="{StaticResource UiFont}">
+                      <Run Foreground="{DynamicResource Accent2Brush}" FontWeight="Bold">24/7 Network Monitoring</Run><LineBreak/>
+                      Records latency trends, packet loss, DNS, and route jitter over time.<LineBreak/><LineBreak/>
+                      <Run Foreground="{DynamicResource AccentBrush}" FontWeight="Bold">Features:</Run><LineBreak/>
+                      Automatic speed tests (Ookla + iperf3)<LineBreak/>
+                      Dashboard with heatmap &amp; alerts<LineBreak/>
+                      SQLite database for long-term storage<LineBreak/>
+                      Prometheus metrics endpoint<LineBreak/><LineBreak/>
+                      <Run Foreground="{DynamicResource WarnBrush}" FontWeight="Bold">Usage:</Run><LineBreak/>
+                      Start the service, open dashboard in browser, configure targets &amp; scheduling in the UI.
+                    </TextBlock>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="MONITORING CAPABILITIES" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                        <Border Width="6" Height="6" Background="{DynamicResource SuccessBrush}" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Latency &amp; connectivity probing" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                        <Border Width="6" Height="6" Background="{DynamicResource SuccessBrush}" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Scheduled broadband speed tests" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                        <Border Width="6" Height="6" Background="{DynamicResource SuccessBrush}" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Packet loss &amp; DNS resolution tracking" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                        <Border Width="6" Height="6" Background="{DynamicResource SuccessBrush}" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Alerting &amp; heartbeat URL" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <Border Width="6" Height="6" Background="{DynamicResource SuccessBrush}" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Heatmap visualization of outages" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- ════════════════════ HISTORY PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelHistory" Grid.Row="0" Visibility="Hidden">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="14,12">
+              <Grid>
+                <TextBlock Text="Test History" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                  <TextBlock Text="Filter:" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                             FontFamily="{StaticResource UiFont}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <ComboBox x:Name="HistoryFilter" Width="150" Height="28"
+                            Background="{DynamicResource InputBrush}"
+                            BorderBrush="{DynamicResource StrokeBrush}"
+                            BorderThickness="1" Foreground="{DynamicResource TextBrush}"
+                            FontSize="12" Padding="8,5" SelectedIndex="0"
+                            SelectionChanged="HistoryFilter_Changed" FontFamily="{StaticResource UiFont}">
+                    <ComboBoxItem Content="All Engines"/><ComboBoxItem Content="speedtest-go"/>
+                    <ComboBoxItem Content="librespeed"/><ComboBoxItem Content="ethr"/><ComboBoxItem Content="iperf3"/>
+                  </ComboBox>
+                  <Button Content="Export CSV" Style="{StaticResource SecondaryBtn}"
+                          Height="28" Padding="14,0" Margin="8,0,0,0" Click="ExportCSV_Click" FontFamily="{StaticResource UiFont}"/>
+                  <Button Content="Clear All" Style="{StaticResource GhostBtn}"
+                          Height="28" Padding="14,0" Click="ClearHistory_Click" FontFamily="{StaticResource UiFont}"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <Border Style="{StaticResource Card}" Padding="0">
+              <DataGrid x:Name="HistoryGrid" Style="{StaticResource HistoryDataGrid}"/>
+            </Border>
+          </StackPanel>
+
+          <!-- ════════════════════ SETTINGS PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelSettings" Grid.Row="0" Visibility="Hidden">
+            <Grid Margin="0,0,0,16">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="280"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="280"/></Grid.ColumnDefinitions>
+
+              <!-- Left: Engine config -->
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock x:Name="SetEngineTitle" Text="ENGINE CONFIGURATION" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,14"/>
+                    <StackPanel Margin="0,0,0,12">
+                      <TextBlock x:Name="SetEngineLabel" Text="Default Engine" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <ComboBox x:Name="SettingEngine" FontSize="12" Padding="10,7" SelectedIndex="0"
+                                SelectionChanged="SettingEngine_Changed" FontFamily="{StaticResource UiFont}">
+                        <ComboBoxItem Content="LibreSpeed CLI"/><ComboBoxItem Content="speedtest-go (Ookla servers)"/>
+                      </ComboBox>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,12">
+                      <TextBlock x:Name="SetServerLabel" Text="Test Server" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <TextBox x:Name="SettingServer" FontSize="12" Padding="10,7"
+                               Text="speedtest.dukekunshan.edu.cn" FontFamily="{StaticResource UiFont}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,12">
+                      <TextBlock x:Name="SetDurationLabel" Text="Test Duration (seconds)" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="50"/></Grid.ColumnDefinitions>
+                        <Slider x:Name="SettingDuration" Grid.Column="0" Minimum="5" Maximum="60"
+                                Value="15" TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,4,0,0"
+                                ValueChanged="SettingDuration_ValueChanged" FontFamily="{StaticResource UiFont}"/>
+                        <TextBlock Grid.Column="1" x:Name="SettingDurationVal" Text="15s" FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="8,12,0,0" VerticalAlignment="Center"/>
+                      </Grid>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,12">
+                      <TextBlock x:Name="SetThreadsLabel" Text="Concurrent Threads" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                                 FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                      <Slider x:Name="SettingThreads" Minimum="1" Maximum="16" Value="4"
+                              TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"
+                              ValueChanged="SettingThreads_ValueChanged" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock x:Name="SettingThreadsVal" Text="4 threads" FontSize="10"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Border Background="{DynamicResource CardSunkenBrush}" CornerRadius="8"
+                            Padding="14" BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <StackPanel>
+                        <TextBlock x:Name="SetEnginesLabel" Text="Available Engines" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AccentBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                          <Border Width="8" Height="8" Background="{DynamicResource SuccessBrush}" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                          <TextBlock Text="speedtest-go.exe" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                          <TextBlock Text="Ready" FontSize="11" Foreground="{DynamicResource SuccessBrush}" Margin="8,0,0,0" FontFamily="{StaticResource UiFont}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                          <Border Width="8" Height="8" Background="{DynamicResource SuccessBrush}" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                          <TextBlock Text="librespeed-cli.exe" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                          <TextBlock Text="Ready" FontSize="11" Foreground="{DynamicResource SuccessBrush}" Margin="8,0,0,0" FontFamily="{StaticResource UiFont}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                          <Border Width="8" Height="8" Background="{DynamicResource SuccessBrush}" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                          <TextBlock Text="ethr.exe" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                          <TextBlock Text="Ready" FontSize="11" Foreground="{DynamicResource SuccessBrush}" Margin="8,0,0,0" FontFamily="{StaticResource UiFont}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                          <Border Width="8" Height="8" Background="{DynamicResource SuccessBrush}" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                          <TextBlock Text="iperf3.exe + cygwin1.dll" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                          <TextBlock Text="Ready" FontSize="11" Foreground="{DynamicResource SuccessBrush}" Margin="8,0,0,0" FontFamily="{StaticResource UiFont}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                          <Border Width="8" Height="8" Background="{DynamicResource SuccessBrush}" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                          <TextBlock Text="pingularity.exe" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                          <TextBlock Text="Ready" FontSize="11" Foreground="{DynamicResource SuccessBrush}" Margin="8,0,0,0" FontFamily="{StaticResource UiFont}"/>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- Right: Theme + About -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock x:Name="SetAppearanceTitle" Text="APPEARANCE" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,2,0,0">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SetThemeLabel" Grid.Column="0" Text="Active Theme" FontSize="12"
+                                 Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock x:Name="SetThemeValue" Grid.Column="1" Text="Dark Tech" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource AccentBrush}" FontFamily="{StaticResource UiFont}"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock x:Name="SetProxyTitle" Text="PROXY SERVER" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                    <TextBlock x:Name="SetProxyHint" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <TextBox x:Name="SettingProxy" FontSize="12" Padding="10,7"
+                             TextChanged="SettingProxy_TextChanged" FontFamily="{StaticResource UiFont}"/>
+                    <TextBlock x:Name="SettingProxyState" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,6,0,0"/>
+                  </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock x:Name="SetAboutTitle" Text="About SpeedPro" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               LineHeight="22" FontFamily="{StaticResource UiFont}">
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.6</Run><LineBreak/>
+                      Professional network performance analysis suite.<LineBreak/>
+                      Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
+                      <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>
+                      speedtest-go (Ookla), LibreSpeed CLI, Microsoft Ethr,<LineBreak/>
+                      iperf3 (TCP/UDP throughput), Pingularity (24/7 monitoring)<LineBreak/><LineBreak/>
+                      <Run Foreground="{DynamicResource WarnBrush}" FontWeight="SemiBold">Architecture:</Run>
+                      WPF .NET 8 | Cross-platform (x64/ARM64)<LineBreak/><LineBreak/>
+                      <Run Foreground="{DynamicResource SuccessBrush}" FontWeight="SemiBold">Themes:</Run>
+                      黑科技 Dark Tech · 经典浅白 Classic Light
+                    </TextBlock>
+                  </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock x:Name="SetSystemTitle" Text="System" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <TextBlock x:Name="SysHostname" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="SysOS" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="SysArch" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                               FontFamily="{StaticResource UiFont}"/>
+                  </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,0,0,0">
+                  <StackPanel>
+                    <TextBlock x:Name="SetActionsTitle" Text="Quick Actions" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Button x:Name="OpenLogBtn" Content="Open Log Directory" Style="{StaticResource SecondaryBtn}"
+                            Height="34" Padding="16,0" Margin="0,0,0,8" Click="OpenLogDir_Click" Width="180" FontFamily="{StaticResource UiFont}"/>
+                    <Button x:Name="RefreshBtn" Content="Refresh Engine Status" Style="{StaticResource SecondaryBtn}"
+                            Height="34" Padding="16,0" Click="RefreshEngines_Click" Width="180" FontFamily="{StaticResource UiFont}"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          </Grid>
+        </ScrollViewer>
+
+        <!-- Fixed bottom row: log + results summary -->
+        <Border x:Name="BottomRow" Grid.Row="1" Background="{DynamicResource CardBrush}"
+                BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="0,1,0,0">
+          <Grid Margin="24,10,24,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="1*" MinWidth="320"/>
+              <ColumnDefinition Width="16"/>
+              <ColumnDefinition Width="300"/>
+            </Grid.ColumnDefinitions>
+            <!-- Log -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+              <StackPanel>
+                <!-- Header: TEST LOG + progress bar + stage + clear -->
+                <Grid Margin="0,0,0,6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="LogTitle" Grid.Column="0" Text="TEST LOG" FontSize="12"
+                             FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                             FontFamily="{StaticResource UiFont}"/>
+                  <Border x:Name="ProgressCardOuter" Grid.Column="1" Height="12" CornerRadius="6"
+                          Background="{DynamicResource CardSunkenBrush}"
+                          BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1"
+                          VerticalAlignment="Center" Margin="12,0">
+                    <Border x:Name="ProgressCardFill" Height="10" CornerRadius="5"
+                            Background="{DynamicResource AccentGradBrush}"
+                            HorizontalAlignment="Left" Width="0"/>
+                  </Border>
+                  <TextBlock x:Name="ProgressPct" Grid.Column="2" Text="0%" FontSize="12"
+                             Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                             FontFamily="{StaticResource UiFont}" Margin="10,0,0,0"/>
+                  <TextBlock x:Name="ProgressStage" Grid.Column="3" Text="Idle" FontSize="11"
+                             Foreground="{DynamicResource TextMutedBrush}"
+                             FontFamily="{StaticResource UiFont}" Margin="10,0,0,0"/>
+                  <Button x:Name="ClearLogBtn" Grid.Column="4" Content="Clear" Style="{StaticResource GhostBtn}"
+                          Click="ClearLog_Click"/>
+                </Grid>
+                <TextBlock x:Name="ProgressDetail" Text="" FontSize="10"
+                           Foreground="{DynamicResource TextDimBrush}"
+                           FontFamily="{StaticResource UiFont}" Margin="0,0,0,6"/>
+                <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                        BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                  <TextBox x:Name="LogList" Background="{DynamicResource CardSunkenBrush}"
+                           BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1"
+                           Foreground="{DynamicResource SuccessBrush}"
+                           FontFamily="{StaticResource MonoFont}" FontSize="11"
+                           HorizontalScrollBarVisibility="Auto"
+                           VerticalScrollBarVisibility="Auto" Height="180"
+                           IsReadOnly="True"
+                           Padding="8,6"
+                           VerticalContentAlignment="Top"
+                           KeyDown="LogList_KeyDown"
+                           TextWrapping="NoWrap"/>
+                </Border>
+              </StackPanel>
+            </Border>
+            <!-- Summary -->
+            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="14">
+              <StackPanel>
+                <TextBlock x:Name="SummaryTitle" Text="RESULTS SUMMARY" FontSize="12"
+                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                           FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                <Grid>
+                  <Grid.RowDefinitions><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/></Grid.RowDefinitions>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="68"/><ColumnDefinition Width="*"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions>
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Download" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SummaryDL" Text="--" FontSize="12"
+                             Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                             FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="0" Grid.Column="2" Text="Mbps" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Upload" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SummaryUL" Text="--" FontSize="12"
+                             Foreground="{DynamicResource Accent2Brush}" FontWeight="SemiBold"
+                             FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="1" Grid.Column="2" Text="Mbps" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Ping" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SummaryPing" Text="--" FontSize="12"
+                             Foreground="{DynamicResource WarnBrush}" FontWeight="SemiBold"
+                             FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="2" Grid.Column="2" Text="ms" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Jitter" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SummaryJitter" Text="--" FontSize="12"
+                             Foreground="#FF6BFA" FontWeight="SemiBold"
+                             FontFamily="{StaticResource UiFont}"/>
+                  <TextBlock Grid.Row="3" Grid.Column="2" Text="ms" FontSize="10"
+                             Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Border>
+      <!-- Status bar -->
+      <Border Grid.Row="2" Background="{DynamicResource PanelBrush}"
+              BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,1,0,0"
+              VerticalAlignment="Bottom" Height="28">
+        <Grid Margin="16,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="StatusLeft" Text="Ready" FontSize="11"
+                     Foreground="{DynamicResource TextDimBrush}"
+                     FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StatusRight" Text="" FontSize="11"
+                     Foreground="{DynamicResource TextDimBrush}"
+                     FontFamily="{StaticResource UiFont}"
+                     HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Grid>
+</Window>

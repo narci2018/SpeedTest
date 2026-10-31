@@ -1,0 +1,70 @@
+name: Release
+
+# 推送 v* 标签时自动编译打包并发布 Release；也可在 Actions 页手动触发（仅构建不发布）
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+        fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish (${{ matrix.rid }})
+        run: dotnet publish SpeedProGUI/SpeedPro.csproj -c Release -r ${{ matrix.rid }} --self-contained false -o out/${{ matrix.rid }}
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Compress-Archive -Path "out/${{ matrix.rid }}/*" -DestinationPath "SpeedPro-$tag-${{ matrix.rid }}.zip" -Force
+          Get-ChildItem *.zip | Select-Object Name, Length
+
+      - name: Upload build artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeedPro-${{ github.ref_name }}-${{ matrix.rid }}
+          path: SpeedPro-*.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SpeedPro-*-win-x64.zip
+            SpeedPro-*-win-arm64.zip
+          generate_release_notes: true
+          body: |
+            ## SpeedPro ${{ github.ref_name }}
+
+            | 压缩包 | 架构 | 运行要求 |
+            |---|---|---|
+            | `SpeedPro-${{ github.ref_name }}-win-x64.zip` | x64 | .NET 8 Desktop Runtime |
+            | `SpeedPro-${{ github.ref_name }}-win-arm64.zip` | ARM64 | .NET 8 Desktop Runtime |
+
+            **运行前准备**
+            1. 安装 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（对应架构）。
+            2. 解压后，将测速引擎放到 `SpeedPro.exe` 同目录下：
+               `speedtest-go.exe`、`librespeed-cli.exe`、`ethr.exe`、`iperf3.exe` + `cygwin1.dll`、`pingularity.exe`
+               （缺少引擎时对应功能不可用，其余页面正常。）
+            3. 如需测试被墙网站，先在 设置 → 代理服务器 配置本地代理。
+
+            > 由 GitHub Actions 自动构建：`dotnet publish -c Release`（框架依赖，非自包含）。

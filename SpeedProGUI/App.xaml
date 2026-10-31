@@ -1,0 +1,13 @@
+<Application x:Class="SpeedPro.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- Controls are loaded here always; theme brushes come from the active theme -->
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Themes/Controls.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

@@ -1,0 +1,28 @@
+# ── .NET build output ──
+bin/
+obj/
+out/
+publish/
+publish-*/
+artifacts/
+
+# ── Visual Studio / IDE ──
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+
+# ── Runtime artifacts ──
+*.db
+*.log
+_crash*.txt
+_diag-*.json
+_diag-*.txt
+_libre.json
+_test-json.txt
+_err.txt
+
+# ── OS junk ──
+Thumbs.db
+Desktop.ini

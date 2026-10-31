@@ -1,0 +1,28 @@
+# ═══════════════════════════════════════════════════════════════
+# 白名单模式：默认忽略根目录下所有内容（第三方 exe / 源码快照 /
+# 发布产物 / 截图 / 日志等都不入库），只放行下列内容
+# ═══════════════════════════════════════════════════════════════
+/*
+
+# ── 放行：仓库配置与文档 ──
+!/.github/
+!/.gitignore
+!/README.md
+
+# ── 放行：应用源码 ──
+!/SpeedProGUI/
+
+# SpeedProGUI 内仍需排除的构建/运行产物
+SpeedProGUI/bin/
+SpeedProGUI/obj/
+SpeedProGUI/publish/
+SpeedProGUI/publish-*/
+SpeedProGUI/out/
+SpeedProGUI/*.db
+
+# 全局杂项
+*.log
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

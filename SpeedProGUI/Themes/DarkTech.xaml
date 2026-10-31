@@ -1,0 +1,68 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ═══════════ 黑科技 (Dark Tech) — 深色科技风 ═══════════ -->
+
+  <SolidColorBrush x:Key="BgBrush"           Color="#0A0A0F"/>
+  <SolidColorBrush x:Key="BgDeepBrush"       Color="#050508"/>
+  <SolidColorBrush x:Key="PanelBrush"        Color="#0D0D14"/>
+  <SolidColorBrush x:Key="TitleBarBrush"     Color="#00000000"/>
+  <SolidColorBrush x:Key="CardBrush"         Color="#12121C"/>
+  <SolidColorBrush x:Key="CardHoverBrush"    Color="#181828"/>
+  <SolidColorBrush x:Key="CardSunkenBrush"   Color="#0E0E16"/>
+  <SolidColorBrush x:Key="InputBrush"        Color="#0C0C12"/>
+  <SolidColorBrush x:Key="StrokeBrush"       Color="#2A2A3E"/>
+  <SolidColorBrush x:Key="StrokeSoftBrush"   Color="#1E1E2E"/>
+  <SolidColorBrush x:Key="TextBrush"         Color="#E8EAF2"/>
+  <SolidColorBrush x:Key="TextMutedBrush"    Color="#8A90A8"/>
+  <SolidColorBrush x:Key="TextDimBrush"      Color="#565C74"/>
+  <SolidColorBrush x:Key="TextOnAccentBrush" Color="#050A12"/>
+  <SolidColorBrush x:Key="AccentBrush"       Color="#00E5FF"/>
+  <SolidColorBrush x:Key="AccentHoverBrush"  Color="#33EEFF"/>
+  <SolidColorBrush x:Key="AccentPressBrush"  Color="#00B8CC"/>
+  <SolidColorBrush x:Key="Accent2Brush"      Color="#B388FF"/>
+  <SolidColorBrush x:Key="Accent3Brush"      Color="#00FFA3"/>
+  <SolidColorBrush x:Key="SuccessBrush"      Color="#00FFA3"/>
+  <SolidColorBrush x:Key="WarnBrush"         Color="#FFD740"/>
+  <SolidColorBrush x:Key="DangerBrush"       Color="#FF5252"/>
+  <SolidColorBrush x:Key="AccentFillBrush"   Color="#1A00E5FF"/>
+  <SolidColorBrush x:Key="AccentFaintBrush"  Color="#0D00E5FF"/>
+  <SolidColorBrush x:Key="SelectBrush"       Color="#2E00E5FF"/>
+  <SolidColorBrush x:Key="ChartDLBrush"      Color="#00E5FF"/>
+  <SolidColorBrush x:Key="ChartULBrush"      Color="#B388FF"/>
+  <SolidColorBrush x:Key="ChartPingBrush"    Color="#FFD740"/>
+  <SolidColorBrush x:Key="ChartGridBrush"    Color="#14FFFFFF"/>
+  <SolidColorBrush x:Key="ChartAxisBrush"    Color="#3A4060"/>
+
+  <LinearGradientBrush x:Key="AccentGradBrush" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#00E5FF" Offset="0"/>
+    <GradientStop Color="#B388FF" Offset="1"/>
+  </LinearGradientBrush>
+
+  <LinearGradientBrush x:Key="HeroBrush" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#0A1A22" Offset="0"/>
+    <GradientStop Color="#0D1018" Offset="0.55"/>
+    <GradientStop Color="#140E1E" Offset="1"/>
+  </LinearGradientBrush>
+
+  <RadialGradientBrush x:Key="BgGlowBrush" Center="0.12,0.05" GradientOrigin="0.12,0.05" RadiusX="0.85" RadiusY="0.85">
+    <GradientStop Color="#2A00E5FF" Offset="0"/>
+    <GradientStop Color="#0A00E5FF" Offset="0.55"/>
+    <GradientStop Color="#0000E5FF" Offset="1"/>
+  </RadialGradientBrush>
+
+  <RadialGradientBrush x:Key="HeroGlowBrush" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.55" RadiusY="0.55">
+    <GradientStop Color="#3A00E5FF" Offset="0"/>
+    <GradientStop Color="#0000E5FF" Offset="1"/>
+  </RadialGradientBrush>
+
+  <Color x:Key="AccentColor">#00E5FF</Color>
+  <Color x:Key="Accent2Color">#B388FF</Color>
+  <Color x:Key="SuccessColor">#00FFA3</Color>
+  <Color x:Key="WarnColor">#FFD740</Color>
+  <Color x:Key="DangerColor">#FF5252</Color>
+  <Color x:Key="CardColor">#12121C</Color>
+
+  <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib" x:Key="ThemeName">黑科技</sys:String>
+  <sys:Boolean xmlns:sys="clr-namespace:System;assembly=mscorlib" x:Key="ThemeIsDark">True</sys:Boolean>
+</ResourceDictionary>

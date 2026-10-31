@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.6 — Network Performance Suite"
+        Title="SpeedPro v3.6.1 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -101,7 +101,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.6 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.6.1 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1185,7 +1185,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.6</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.6.1</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

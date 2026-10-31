@@ -1840,7 +1840,11 @@ public partial class MainWindow : Window
         _pingularity?.Kill();
     }
 
-    private static string GetExePath(string name) => global::System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, name);
+    private static string GetExePath(string name)
+    {
+        if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name += ".exe";
+        return global::System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, name);
+    }
 
     /// <summary>
     /// Returns "--proxy=URL" if a system proxy is configured, empty string otherwise.

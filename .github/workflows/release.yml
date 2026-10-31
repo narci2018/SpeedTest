@@ -32,6 +32,15 @@ jobs:
       - name: Publish (${{ matrix.rid }})
         run: dotnet publish SpeedProGUI/SpeedPro.csproj -c Release -r ${{ matrix.rid }} --self-contained false -o out/${{ matrix.rid }}
 
+      - name: Bundle engines
+        shell: pwsh
+        run: |
+          # x64 基础引擎集（ethr/iperf3+cygwin/pingularity 无官方 arm64 构建，arm64 包内以 x64 兼容模式运行）
+          Copy-Item engines/x64/* out/${{ matrix.rid }}/ -Force
+          # arm64 专属构建覆盖同名引擎（speedtest-go / librespeed-cli）
+          if (Test-Path "engines/${{ matrix.rid }}") { Copy-Item engines/${{ matrix.rid }}/* out/${{ matrix.rid }}/ -Force }
+          Get-ChildItem out/${{ matrix.rid }} | Select-Object Name, Length
+
       - name: Package
         shell: pwsh
         run: |
@@ -62,11 +71,10 @@ jobs:
             | `SpeedPro-${{ github.ref_name }}-win-x64.zip` | x64 | .NET 8 Desktop Runtime |
             | `SpeedPro-${{ github.ref_name }}-win-arm64.zip` | ARM64 | .NET 8 Desktop Runtime |
 
-            **运行前准备**
+            **安装与运行**
             1. 安装 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（对应架构）。
-            2. 解压后，将测速引擎放到 `SpeedPro.exe` 同目录下：
-               `speedtest-go.exe`、`librespeed-cli.exe`、`ethr.exe`、`iperf3.exe` + `cygwin1.dll`、`pingularity.exe`
-               （缺少引擎时对应功能不可用，其余页面正常。）
+            2. 解压即用——五个测速引擎（speedtest-go / librespeed-cli / ethr / iperf3+cygwin1.dll / pingularity）已内置。
+               ARM64 包中的 ethr、iperf3、pingularity 为 x64 构建，Windows 11 ARM64 通过 x64 模拟运行。
             3. 如需测试被墙网站，先在 设置 → 代理服务器 配置本地代理。
 
             > 由 GitHub Actions 自动构建：`dotnet publish -c Release`（框架依赖，非自包含）。

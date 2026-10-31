@@ -12,6 +12,9 @@
 # ── 放行：应用源码 ──
 !/SpeedProGUI/
 
+# ── 放行：测速引擎依赖（CI 打包进 Release zip）──
+!/engines/
+
 # SpeedProGUI 内仍需排除的构建/运行产物
 SpeedProGUI/bin/
 SpeedProGUI/obj/

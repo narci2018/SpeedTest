@@ -14,9 +14,11 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
+      # 注意：fail-fast 是 strategy 的属性，放 matrix 里会被当成矩阵维度而报
+      # "Unexpected value 'false'"（矩阵维度值必须是数组）
+      fail-fast: false
       matrix:
         rid: [win-x64, win-arm64]
-        fail-fast: false
 
     steps:
       - name: Checkout

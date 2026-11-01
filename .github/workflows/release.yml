@@ -59,9 +59,9 @@ jobs:
   build-sc:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         rid: [win-x64, win-arm64]
-        fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4

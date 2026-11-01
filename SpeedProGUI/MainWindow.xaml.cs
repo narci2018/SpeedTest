@@ -34,7 +34,7 @@ using FontFamily = System.Windows.Media.FontFamily;
 namespace SpeedPro;
 
 public enum EngineType { SpeedTestGo, LibreSpeed }
-public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, Tools, RouteMon, History, Settings }
+public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, Tools, RouteMon, Vps, History, Settings }
 
 public record HistoryEntry(
     string Time, string Engine, double Download, double Upload,
@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         LoadConfig();
         LoadHistory();
         LoadMonitor();
+        UpdateVpsCommand();
         StartUsageMeter();
         InitTrayIcon();
         HistoryChartCanvas.SizeChanged += (s, e) => { if (HistoryGrid != null) ApplyHistoryFilter(); };
@@ -127,7 +128,7 @@ public partial class MainWindow : Window
                 "website"  => "website",
                 "monitor"  => "monitor",
                 "tools"    => "tools",
-                "routemon" => "routemon",
+                "vps"      => "vps",
                 "iperf3"   => "iperf3",
                 "ethr"     => "ethr",
                 "ping"     => "pingularity",
@@ -138,7 +139,7 @@ public partial class MainWindow : Window
             _currentPage = tag switch
             {
                 "website" => NavPage.Website, "monitor" => NavPage.Monitor,
-                "tools" => NavPage.Tools, "routemon" => NavPage.RouteMon,
+                "tools" => NavPage.Tools, "routemon" => NavPage.RouteMon, "vps" => NavPage.Vps,
                 "iperf3" => NavPage.Iperf3, "ethr" => NavPage.Ethr,
                 "pingularity" => NavPage.Pingularity,
                 "history" => NavPage.History, "settings" => NavPage.Settings, _ => NavPage.Test
@@ -219,6 +220,7 @@ public partial class MainWindow : Window
         { nameof(NavMonitor), "monitor" },
         { nameof(NavTools),   "tools" },
         { nameof(NavRouteMon), "routemon" },
+        { nameof(NavVpsTest), "vps" },
         { nameof(NavPing),    "pingularity" },
         { nameof(NavHistory), "history" },
         { nameof(NavSettings),"settings" },
@@ -238,6 +240,7 @@ public partial class MainWindow : Window
             "pingularity"=> NavPage.Pingularity,
             "tools"      => NavPage.Tools,
             "routemon"   => NavPage.RouteMon,
+            "vps"        => NavPage.Vps,
             "history"    => NavPage.History,
             "settings"   => NavPage.Settings,
             _            => _currentPage
@@ -253,6 +256,7 @@ public partial class MainWindow : Window
         NavMonitor.IsChecked  = tag == "monitor";
         NavTools.IsChecked    = tag == "tools";
         NavRouteMon.IsChecked = tag == "routemon";
+        NavVpsTest.IsChecked  = tag == "vps";
         NavIperf3.IsChecked   = tag == "iperf3";
         NavEthr.IsChecked     = tag == "ethr";
         NavPing.IsChecked     = tag == "pingularity";
@@ -267,6 +271,7 @@ public partial class MainWindow : Window
         PanelMonitor.Visibility      = page == NavPage.Monitor       ? Visibility.Visible : Visibility.Collapsed;
         PanelTools.Visibility        = page == NavPage.Tools         ? Visibility.Visible : Visibility.Collapsed;
         PanelRouteMon.Visibility     = page == NavPage.RouteMon      ? Visibility.Visible : Visibility.Collapsed;
+        PanelVps.Visibility          = page == NavPage.Vps           ? Visibility.Visible : Visibility.Collapsed;
         PanelIperf3.Visibility       = page == NavPage.Iperf3        ? Visibility.Visible : Visibility.Collapsed;
         PanelEthr.Visibility         = page == NavPage.Ethr          ? Visibility.Visible : Visibility.Collapsed;
         PanelPingularity.Visibility  = page == NavPage.Pingularity   ? Visibility.Visible : Visibility.Collapsed;
@@ -281,6 +286,7 @@ public partial class MainWindow : Window
             NavPage.Website    => Loc.Get("title.website"),
             NavPage.Monitor    => Loc.Get("title.monitor"),
             NavPage.Tools      => Loc.Get("title.tools"),
+            NavPage.Vps        => Loc.Get("title.vps"),
             NavPage.RouteMon   => Loc.Get("title.routemon"),
             NavPage.Iperf3     => Loc.Get("title.iperf3"),
             NavPage.Ethr       => Loc.Get("title.ethr"),
@@ -2668,6 +2674,180 @@ public partial class MainWindow : Window
 
     private static string Trunc(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
 
+    // ── VPS speed test (zero-install nc protocol) ──────────────────────────
+    private bool _vpsRunning;
+    private CancellationTokenSource? _vpsCts;
+    private long _vpsLive;
+    private System.Diagnostics.Stopwatch _vpsSw = new();
+    private System.Windows.Threading.DispatcherTimer? _vpsTimer;
+    private readonly List<double> _vpsRtts = new();   // 每秒速率样本（Mbps）
+
+    private bool VpsDownload =>
+        VpsDirection?.SelectedItem is System.Windows.Controls.ComboBoxItem it &&
+        (it.Content as string ?? "").Contains("下行");
+
+    private int VpsPortNum => int.TryParse(VpsPort.Text, out var p) && p > 0 && p < 65536 ? p : 19201;
+    private int VpsSeconds => int.TryParse(VpsDuration.Text, out var s) && s > 0 && s <= 60 ? s : 10;
+
+    private void UpdateVpsCommand()
+    {
+        if (VpsCommandBox == null) return;
+        int port = VpsPortNum;
+        string ncCmd = VpsDownload
+            ? $"cat /dev/zero | nc -l -p {port}"
+            : $"nc -l -p {port} > /dev/null";
+        VpsCommandBox.Text = ncCmd;
+        VpsCmdNote.Text = VpsDownload
+            ? "下行（VPS 发送 → 本机接收）。Debian/Ubuntu 若提示 -p 不支持，请改用：cat /dev/zero | nc -l " + port
+            : "上行（本机发送 → VPS 丢弃）。Debian/Ubuntu 若提示 -p 不支持，请改用：nc -l " + port + " > /dev/null";
+        VpsIperf3Cmd.Text = "apt install -y iperf3 && iperf3 -s -p " + port;
+    }
+
+    private void VpsDirection_Changed(object? sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        => UpdateVpsCommand();
+
+    private void VpsCopyCmd_Click(object? sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(VpsCommandBox.Text); SetVpsStatus("命令已复制到剪贴板", "#4ADE80"); }
+        catch (Exception ex) { SetVpsStatus("复制失败：" + ex.Message, "#F87171"); }
+    }
+
+    private void SetVpsStatus(string text, string color)
+    {
+        VpsStatus.Text = text;
+        VpsStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    private async void VpsStartBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_vpsRunning) { _vpsCts?.Cancel(); return; }
+        string host = VpsHost.Text.Trim();
+        if (host.Length == 0) { SetVpsStatus("请填写 VPS IP。", "#F87171"); return; }
+        int port = VpsPortNum;
+        int seconds = VpsSeconds;
+        bool download = VpsDownload;
+
+        _vpsCts = new CancellationTokenSource();
+        _vpsRunning = true;
+        VpsStartBtn.Content = "停止";
+        VpsStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#F87171")!;
+        _vpsRtts.Clear();
+        VpsChartCanvas.Children.Clear();
+        try
+        {
+            SetVpsStatus($"连接 {host}:{port} …（请确认已在 VPS 上执行命令）", "#FBBF24");
+            var (mbps, bytes, secs) = await VpsMeasureAsync(host, port, download, seconds, _vpsCts.Token);
+            VpsHeroSpeed.Text = mbps.ToString("F1") + " Mbps";
+            VpsHeroBytes.Text = FormatBytes(bytes);
+            _vpsRtts.Clear();
+            SetVpsStatus($"完成 · {mbps:F1} Mbps · {FormatBytes(bytes)} in {secs:F1}s · " +
+                         (download ? "下行 VPS→本机" : "上行 本机→VPS"), "#4ADE80");
+            AddLog($"VPS speed test: {host}:{port} {(download ? "downlink" : "uplink")} — {mbps:F1} Mbps ({FormatBytes(bytes)} in {secs:F1}s)");
+        }
+        catch (OperationCanceledException) { SetVpsStatus("已停止", "#6F7686"); }
+        catch (Exception ex)
+        {
+            SetVpsStatus("失败：" + ex.Message, "#F87171");
+            AddLog("VPS test failed: " + ex.Message);
+        }
+        finally
+        {
+            _vpsRunning = false;
+            VpsStartBtn.Content = "连接并测速";
+            VpsStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#00E5FF")!;
+        }
+    }
+
+    private async Task<(double Mbps, long Bytes, double Seconds)> VpsMeasureAsync(
+        string host, int port, bool download, int seconds, CancellationToken ct)
+    {
+        using var client = new System.Net.Sockets.TcpClient();
+        var connectTask = client.ConnectAsync(host, port).WaitAsync(TimeSpan.FromSeconds(6), ct);
+        try { await connectTask; }
+        catch (TimeoutException) { throw new Exception("连接超时——请先在 VPS 上执行命令，并确认端口已放行"); }
+        catch (Exception ex) { throw new Exception("连接失败：" + ex.Message + "（请先在 VPS 上执行命令）"); }
+
+        var stream = client.GetStream();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long bytes = 0;
+        _vpsLive = 0;
+        _vpsSw = System.Diagnostics.Stopwatch.StartNew();
+        _vpsTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _vpsTimer.Tick += (s, e) =>
+        {
+            double mbps = _vpsLive * 8 / Math.Max(0.5, _vpsSw.Elapsed.TotalSeconds) / 1e6;
+            VpsHeroSpeed.Text = mbps.ToString("F1") + " Mbps";
+            VpsHeroBytes.Text = FormatBytes(System.Threading.Volatile.Read(ref _vpsLive));
+            DrawVpsChart(mbps);
+        };
+        _vpsTimer.Start();
+        var buf = new byte[262144];
+        try
+        {
+            if (download)
+            {
+                // VPS 发送（cat /dev/zero | nc）→ 本机接收计数
+                while (sw.Elapsed.TotalSeconds < seconds)
+                {
+                    int n = await stream.ReadAsync(buf, ct).AsTask().WaitAsync(TimeSpan.FromSeconds(5), ct);
+                    if (n <= 0) break;   // 对端结束（数据耗尽/命令退出）
+                    bytes += n;
+                    _vpsLive = bytes;
+                }
+            }
+            else
+            {
+                // 本机发送（上行）→ VPS 丢弃
+                while (sw.Elapsed.TotalSeconds < seconds)
+                {
+                    await stream.WriteAsync(buf, ct);
+                    bytes += buf.Length;
+                    _vpsLive = bytes;
+                }
+            }
+        }
+        catch (System.IO.IOException) { /* 对端按约定断开 = 测量结束 */ }
+        finally { _vpsTimer?.Stop(); }
+        sw.Stop();
+        double m = bytes * 8 / Math.Max(0.2, sw.Elapsed.TotalSeconds) / 1e6;
+        _vpsRtts.Add(m);
+        DrawVpsChart(m);
+        return (m, bytes, sw.Elapsed.TotalSeconds);
+    }
+
+    private void DrawVpsChart(double currentMbps)
+    {
+        var canvas = VpsChartCanvas;
+        if (canvas == null) return;
+        canvas.Children.Clear();
+        double w = canvas.ActualWidth, h = canvas.ActualHeight;
+        if (w < 10 || h < 10) return;
+        var samples = _vpsRtts.TakeLast(120).ToList();
+        if (samples.Count == 0) return;
+        double max = Math.Max(samples.Max(), 1);
+        double slot = (w - 6) / Math.Max(1, 120);
+        for (int i = 0; i < samples.Count; i++)
+        {
+            double barH = Math.Max(2, samples[i] / max * (h - 14));
+            string color = samples[i] > max * 0.66 ? "#4ADE80" : samples[i] > max * 0.33 ? "#FBBF24" : "#F87171";
+            var bar = new System.Windows.Shapes.Rectangle
+            {
+                Width = Math.Max(2, slot - 2), Height = barH, RadiusX = 1.5, RadiusY = 1.5,
+                Fill = (Brush)new BrushConverter().ConvertFrom(color)!
+            };
+            canvas.Children.Add(bar);
+            Canvas.SetLeft(bar, 3 + i * slot);
+            Canvas.SetTop(bar, h - 4 - barH);
+        }
+        var lbl = new TextBlock
+        {
+            Text = max.ToString("F0") + " Mbps", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")!
+        };
+        canvas.Children.Add(lbl);
+        Canvas.SetLeft(lbl, 6); Canvas.SetTop(lbl, 2);
+    }
+
     // ── Traffic usage metering (NetWorx-lite) ──────────────────────────────
     private readonly Dictionary<string, UsageDay> _usageDays = new();
     private (ulong rx, ulong tx)? _lastNicRaw;
@@ -3055,6 +3235,7 @@ public partial class MainWindow : Window
         NavMonitor.Content  = Loc.Get("nav.monitor");
         NavTools.Content    = Loc.Get("nav.tools");
         NavRouteMon.Content = Loc.Get("nav.routemon");
+        NavVpsTest.Content  = Loc.Get("nav.vps");
         NavPing.Content     = Loc.Get("nav.ping");
         NavHistory.Content  = Loc.Get("nav.history");
         NavSettings.Content = Loc.Get("nav.settings");

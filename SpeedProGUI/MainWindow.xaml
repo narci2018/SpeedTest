@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.13.1 — Network Performance Suite"
+        Title="SpeedPro v3.14.0 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -76,6 +76,7 @@
           <RadioButton x:Name="NavPing"    Content="Pingularity"       Tag="{StaticResource IcoPing}"      Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavTools"   Content="Tools"             Tag="{StaticResource IcoTools}"     Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavRouteMon" Content="Route Monitor"    Tag="{StaticResource IcoRoute}"     Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavVpsTest"  Content="VPS Speed"        Tag="{StaticResource IcoServer}"    Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavHistory" Content="History"           Tag="{StaticResource IcoHistory}"   Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavSettings" Content="Settings"          Tag="{StaticResource IcoSettings}"  Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
         </StackPanel>
@@ -104,7 +105,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.13.1 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.14.0 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1493,6 +1494,120 @@
             </Grid>
           </StackPanel>
 
+          <!-- ════════════════════ VPS SPEED PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelVps" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <!-- Left: config + commands -->
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="VPS SPEED TEST" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="VPS IP" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="VpsHost" FontSize="12" Padding="10,6"
+                               VerticalAlignment="Center" ToolTip="VPS 公网 IP 或域名"/>
+                      <TextBox Grid.Column="3" x:Name="VpsPort" FontSize="12" Padding="8,5"
+                               Text="19201" VerticalAlignment="Center" ToolTip="端口（命令里的 -p 与此一致）"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="70"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Direction" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="VpsDirection" FontSize="12" Padding="10,6"
+                                SelectedIndex="0" VerticalAlignment="Center" SelectionChanged="VpsDirection_Changed">
+                        <ComboBoxItem Content="下行 VPS → 本机"/>
+                        <ComboBoxItem Content="上行 本机 → VPS"/>
+                      </ComboBox>
+                      <TextBox Grid.Column="3" x:Name="VpsDuration" FontSize="12" Padding="8,5"
+                               Text="10" VerticalAlignment="Center" ToolTip="测量时长（秒）"/>
+                    </Grid>
+                    <Button x:Name="VpsStartBtn" Content="连接并测速" Style="{StaticResource PrimaryBtn}"
+                            Height="34" Padding="20,0" HorizontalAlignment="Left" MinWidth="150"
+                            Click="VpsStartBtn_Click"/>
+                    <TextBlock x:Name="VpsStatus" Text="Stopped" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
+                               Margin="0,10,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="在 VPS 上执行的命令（零安装）" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <Button Content="Copy" Style="{StaticResource GhostBtn}" HorizontalAlignment="Right"
+                              Click="VpsCopyCmd_Click"/>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="VpsCommandBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11.5" IsReadOnly="True" Padding="10" TextWrapping="Wrap"
+                               MaxHeight="90" VerticalScrollBarVisibility="Auto"/>
+                    </Border>
+                    <TextBlock x:Name="VpsCmdNote" FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="IPERF3 方式（更准确 · 多流）" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="VpsIperf3Cmd" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11.5" IsReadOnly="True" Padding="10" TextWrapping="Wrap" MaxHeight="60"/>
+                    </Border>
+                    <TextBlock Text="在 VPS 上执行后，回到 iperf3 页填同一 IP/端口测速（勾选反向 = 测下行）。" FontSize="10.5"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
+                               Margin="0,6,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <!-- Right: hero + chart -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource CardHero}" Margin="0,0,0,12">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                      <TextBlock x:Name="VpsHeroSpeed" Text="--" FontSize="40" FontWeight="Bold"
+                                 Foreground="{DynamicResource SuccessBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Throughput" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                      <TextBlock x:Name="VpsHeroBytes" Text="--" FontSize="40" FontWeight="Bold"
+                                 Foreground="{DynamicResource WarnBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
+                                 TextOptions.TextFormattingMode="Display"/>
+                      <TextBlock Text="Transferred" FontSize="11"
+                                 Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="LIVE THROUGHPUT" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <Canvas x:Name="VpsChartCanvas" Height="150" ClipToBounds="True"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
           <!-- ════════════════════ HISTORY PANEL ════════════════════ -->
           <StackPanel x:Name="PanelHistory" Grid.Row="0" Visibility="Hidden">
             <Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="14,12">
@@ -1679,7 +1794,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.13.1</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.14.0</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

@@ -26,6 +26,7 @@
   <Geometry x:Key="IcoMonitor">M2,10 L6.2,10 L8.2,4.5 L11.8,15.5 L13.8,10 L18,10</Geometry>
   <Geometry x:Key="IcoTools">M3,5.5 L17,5.5 M3,10 L13,10 M3,14.5 L9.5,14.5 M15.5,12.5 L18,15 L14.5,18.5 L12,16</Geometry>
   <Geometry x:Key="IcoRoute">M2,16 L7,16 L7,10.5 L12,10.5 L12,5.5 L18,5.5 M7,16 L7,16</Geometry>
+  <Geometry x:Key="IcoServer">M3,3.5 L17,3.5 L17,8.5 L3,8.5 Z M3,11.5 L17,11.5 L17,16.5 L3,16.5 Z M5.5,6 L5.5,6 M5.5,14 L5.5,14</Geometry>
   <Geometry x:Key="IcoClose">M0,0 L10,10 M10,0 L0,10</Geometry>
   <Geometry x:Key="IcoMin">M0,0 L10,0</Geometry>
   <Geometry x:Key="IcoMax">M0,0 L10,0 L10,10 L0,10 Z</Geometry>

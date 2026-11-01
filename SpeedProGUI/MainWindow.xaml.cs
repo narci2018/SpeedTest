@@ -34,7 +34,7 @@ using FontFamily = System.Windows.Media.FontFamily;
 namespace SpeedPro;
 
 public enum EngineType { SpeedTestGo, LibreSpeed }
-public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, Tools, History, Settings }
+public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, Tools, RouteMon, History, Settings }
 
 public record HistoryEntry(
     string Time, string Engine, double Download, double Upload,
@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         LoadConfig();
         LoadHistory();
         LoadMonitor();
+        StartUsageMeter();
         InitTrayIcon();
         HistoryChartCanvas.SizeChanged += (s, e) => { if (HistoryGrid != null) ApplyHistoryFilter(); };
         MonitorChartCanvas.SizeChanged += (s, e) => DrawMonitorChart();
@@ -126,6 +127,7 @@ public partial class MainWindow : Window
                 "website"  => "website",
                 "monitor"  => "monitor",
                 "tools"    => "tools",
+                "routemon" => "routemon",
                 "iperf3"   => "iperf3",
                 "ethr"     => "ethr",
                 "ping"     => "pingularity",
@@ -136,7 +138,7 @@ public partial class MainWindow : Window
             _currentPage = tag switch
             {
                 "website" => NavPage.Website, "monitor" => NavPage.Monitor,
-                "tools" => NavPage.Tools,
+                "tools" => NavPage.Tools, "routemon" => NavPage.RouteMon,
                 "iperf3" => NavPage.Iperf3, "ethr" => NavPage.Ethr,
                 "pingularity" => NavPage.Pingularity,
                 "history" => NavPage.History, "settings" => NavPage.Settings, _ => NavPage.Test
@@ -216,6 +218,7 @@ public partial class MainWindow : Window
         { nameof(NavWebsite), "website" },
         { nameof(NavMonitor), "monitor" },
         { nameof(NavTools),   "tools" },
+        { nameof(NavRouteMon), "routemon" },
         { nameof(NavPing),    "pingularity" },
         { nameof(NavHistory), "history" },
         { nameof(NavSettings),"settings" },
@@ -234,6 +237,7 @@ public partial class MainWindow : Window
             "ethr"       => NavPage.Ethr,
             "pingularity"=> NavPage.Pingularity,
             "tools"      => NavPage.Tools,
+            "routemon"   => NavPage.RouteMon,
             "history"    => NavPage.History,
             "settings"   => NavPage.Settings,
             _            => _currentPage
@@ -248,6 +252,7 @@ public partial class MainWindow : Window
         NavWebsite.IsChecked  = tag == "website";
         NavMonitor.IsChecked  = tag == "monitor";
         NavTools.IsChecked    = tag == "tools";
+        NavRouteMon.IsChecked = tag == "routemon";
         NavIperf3.IsChecked   = tag == "iperf3";
         NavEthr.IsChecked     = tag == "ethr";
         NavPing.IsChecked     = tag == "pingularity";
@@ -261,6 +266,7 @@ public partial class MainWindow : Window
         PanelWebsite.Visibility      = page == NavPage.Website       ? Visibility.Visible : Visibility.Collapsed;
         PanelMonitor.Visibility      = page == NavPage.Monitor       ? Visibility.Visible : Visibility.Collapsed;
         PanelTools.Visibility        = page == NavPage.Tools         ? Visibility.Visible : Visibility.Collapsed;
+        PanelRouteMon.Visibility     = page == NavPage.RouteMon      ? Visibility.Visible : Visibility.Collapsed;
         PanelIperf3.Visibility       = page == NavPage.Iperf3        ? Visibility.Visible : Visibility.Collapsed;
         PanelEthr.Visibility         = page == NavPage.Ethr          ? Visibility.Visible : Visibility.Collapsed;
         PanelPingularity.Visibility  = page == NavPage.Pingularity   ? Visibility.Visible : Visibility.Collapsed;
@@ -275,6 +281,7 @@ public partial class MainWindow : Window
             NavPage.Website    => Loc.Get("title.website"),
             NavPage.Monitor    => Loc.Get("title.monitor"),
             NavPage.Tools      => Loc.Get("title.tools"),
+            NavPage.RouteMon   => Loc.Get("title.routemon"),
             NavPage.Iperf3     => Loc.Get("title.iperf3"),
             NavPage.Ethr       => Loc.Get("title.ethr"),
             NavPage.Pingularity=> Loc.Get("title.ping"),
@@ -1454,10 +1461,7 @@ public partial class MainWindow : Window
     // ── Website Speed Test ──────────────────────────────────────────────────
     private bool _websiteTesting;
 
-    private sealed record WebSample(
-        int StatusCode, string Server, string ContentType, long BodyBytes,
-        double DnsMs, double TcpMs, double TlsMs, double TtfbMs, double ContentMs, double TotalMs,
-        string FinalUrl, string Ip, int Redirects, string Via);
+    // WebSample 已移至 WebsiteProbe.cs（CLI 模式与路由监控共用）
 
     private async void WebsiteRun_Click(object? sender, RoutedEventArgs e)
     {
@@ -1585,197 +1589,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Runs one polite single-connection GET: DNS → TCP → (proxy CONNECT) → TLS → TTFB → body,
-    /// following up to 5 redirects (http→https etc.). Connection: close; 25 MB cap.
-    /// When a proxy is set, DNS/TCP target the proxy and a CONNECT tunnel carries the TLS.
-    /// </summary>
-    private static async Task<WebSample> RunWebsiteSampleAsync(Uri startUri, Uri? proxy, CancellationToken ct = default)
-    {
-        var uri = startUri;
-        int redirects = 0;
-        while (true)
-        {
-            // ── DNS: target (direct) or proxy host ──
-            string connectHost = proxy?.Host ?? uri.Host;
-            int connectPort = proxy?.Port ?? uri.Port;
-            var sw = Stopwatch.StartNew();
-            IPAddress[] addrs;
-            try { addrs = await Dns.GetHostAddressesAsync(connectHost).WaitAsync(TimeSpan.FromSeconds(6), ct); }
-            catch (TimeoutException) { throw new Exception("DNS lookup timed out (>6s): " + connectHost); }
-            if (addrs.Length == 0) throw new Exception("DNS found no address for " + connectHost);
-            var ipAddr = addrs.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addrs[0];
-            string ip = ipAddr.ToString();
-            double dnsMs = Math.Max(0.05, sw.Elapsed.TotalMilliseconds);
-
-            // ── TCP: to target (direct) or to proxy ──
-            var socket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            System.IO.Stream? stream = null;
-            SslStream? ssl = null;
-            double tcpMs, tlsMs = 0;
-            try
-            {
-                sw.Restart();
-                try { await socket.ConnectAsync(new IPEndPoint(ipAddr, connectPort), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(8), ct); }
-                catch (TimeoutException) { throw new Exception($"TCP connect timed out (>8s): {connectHost}:{connectPort}"); }
-                catch (SocketException se) { throw new Exception($"TCP connect failed: {se.SocketErrorCode} → {connectHost}:{connectPort}"); }
-                tcpMs = sw.Elapsed.TotalMilliseconds;
-                stream = new NetworkStream(socket, ownsSocket: true);
-
-                // ── Proxy tunnel: CONNECT target authority ──
-                if (proxy != null)
-                {
-                    string authority = uri.Host + ":" + uri.Port;   // always include port (curl-compatible)
-                    string connectReq = $"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: keep-alive\r\n\r\n";
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes(connectReq), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
-                    string resp = await ReadProxyConnectResponseAsync(stream, ct);
-                    var cm = System.Text.RegularExpressions.Regex.Match(resp, @"HTTP/\d(?:\.\d)?\s+(\d{3})");
-                    if (!cm.Success || cm.Groups[1].Value != "200")
-                        throw new Exception("Proxy CONNECT failed: " + resp.Split("\r\n")[0]);
-                }
-
-                if (uri.Scheme == "https")
-                {
-                    sw.Restart();
-                    ssl = new SslStream(stream);
-                    try
-                    {
-                        await ssl.AuthenticateAsClientAsync(
-                                new SslClientAuthenticationOptions { TargetHost = uri.Host }, CancellationToken.None)
-                            .WaitAsync(TimeSpan.FromSeconds(8), ct);
-                    }
-                    catch (TimeoutException) { throw new Exception("TLS handshake timed out (>8s): " + uri.Host); }
-                    catch (System.Security.Authentication.AuthenticationException aex)
-                    { throw new Exception("TLS certificate error for " + uri.Host + ": " + aex.Message); }
-                    catch (Exception ex) when (ex is System.IO.IOException or SocketException)
-                    {
-                        throw new Exception(
-                            $"TLS handshake was forcibly reset for {uri.Host} — TCP connected fine, so the domain is likely blocked by your network (SNI reset) or refused by the edge. Try opening the site in a browser to confirm. If you have a proxy (Clash/v2rayN/…), set it in Settings → Proxy Server and retry. [{ex.InnerException?.Message ?? ex.Message}]");
-                    }
-                    tlsMs = sw.Elapsed.TotalMilliseconds;
-                    stream = ssl;
-                }
-
-                // ── HTTP GET (Connection: close → read to EOF) ──
-                string hostHeader = uri.IsDefaultPort ? uri.Host : uri.Authority;
-                string req = $"GET {uri.PathAndQuery} HTTP/1.1\r\n" +
-                             $"Host: {hostHeader}\r\n" +
-                             "User-Agent: SpeedPro-WebsiteTest/3.7\r\n" +
-                             "Accept: */*\r\n" +
-                             "Accept-Encoding: gzip, deflate\r\n" +
-                             "Connection: close\r\n\r\n";
-                var reqBytes = Encoding.ASCII.GetBytes(req);
-                var totalSw = Stopwatch.StartNew();
-                await stream.WriteAsync(reqBytes, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
-
-                // Read until end of headers → TTFB = first byte received
-                var headerBuf = new System.IO.MemoryStream();
-                var chunk = new byte[8192];
-                int n, tail = 0;
-                bool headerDone = false;
-                double ttfbMs = 0;
-                try
-                {
-                    while (!headerDone &&
-                           (n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15), ct)) > 0)
-                    {
-                        if (ttfbMs == 0) ttfbMs = Math.Max(0.05, totalSw.Elapsed.TotalMilliseconds);
-                        headerBuf.Write(chunk, 0, n);
-                        var buf = headerBuf.GetBuffer();
-                        int len = (int)headerBuf.Length;
-                        for (int k = Math.Max(0, len - n - 3); k <= len - 4; k++)
-                        {
-                            if (buf[k] == 13 && buf[k + 1] == 10 && buf[k + 2] == 13 && buf[k + 3] == 10)
-                            {
-                                headerDone = true;
-                                tail = len - (k + 4);
-                                break;
-                            }
-                        }
-                    }
-                }
-                catch (System.IO.IOException io)
-                {
-                    throw new Exception(
-                        "Connection was reset while waiting for the HTTP response — the target or a middlebox closed the link (site down, bot protection, or unstable path). [" +
-                        (io.InnerException?.Message ?? io.Message) + "]");
-                }
-                if (!headerDone)
-                    throw new Exception("Connection closed before any HTTP response — target is not an HTTP service.");
-
-                var headerBytes = headerBuf.ToArray();
-                int headerLen = headerBytes.Length - tail;
-                string headerText = Encoding.ASCII.GetString(headerBytes, 0, headerLen);
-                var lines = headerText.Split("\r\n");
-                var m = System.Text.RegularExpressions.Regex.Match(lines[0], @"HTTP/\d(?:\.\d)?\s+(\d{3})");
-                if (!m.Success) throw new Exception("Unrecognized HTTP status line: " + lines[0]);
-                int status = int.Parse(m.Groups[1].Value);
-                string GetHeader(string name) => lines.Skip(1)
-                    .Select(l => l.Split(new[] { ':' }, 2))
-                    .Where(p => p.Length == 2 && p[0].Trim().Equals(name, StringComparison.OrdinalIgnoreCase))
-                    .Select(p => p[1].Trim())
-                    .FirstOrDefault() ?? "";
-
-                // Follow redirects (http→https, host changes, …) up to 5 hops
-                if (status is 301 or 302 or 303 or 307 or 308 && redirects < 5)
-                {
-                    string loc = GetHeader("Location");
-                    if (!string.IsNullOrEmpty(loc))
-                    {
-                        uri = new Uri(uri, loc);
-                        redirects++;
-                        continue;   // finally below closes the current connection first
-                    }
-                }
-
-                // ── Body: header tail + read to EOF ──
-                long bodyBytes = tail;
-                try
-                {
-                    while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(20), ct)) > 0)
-                    {
-                        bodyBytes += n;
-                        if (bodyBytes > 25_000_000) break;   // 25 MB politeness cap
-                    }
-                }
-                catch (System.IO.IOException io)
-                {
-                    throw new Exception(
-                        $"Connection was reset while downloading the response body (received {FormatBytes(bodyBytes)} before the reset). [" +
-                        (io.InnerException?.Message ?? io.Message) + "]");
-                }
-                double totalMs = totalSw.Elapsed.TotalMilliseconds;
-                double contentMs = Math.Max(0.05, totalMs - ttfbMs);
-                return new WebSample(status, GetHeader("Server"), GetHeader("Content-Type"), bodyBytes,
-                    dnsMs, tcpMs, tlsMs, ttfbMs, contentMs, totalMs, uri.ToString(), ip, redirects,
-                    proxy != null ? proxy.Authority : "");
-            }
-            finally
-            {
-                ssl?.Dispose();                 // disposes the inner NetworkStream + socket too
-                if (ssl == null) stream?.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Reads a CONNECT response (headers only) from the proxy tunnel.</summary>
-    private static async Task<string> ReadProxyConnectResponseAsync(System.IO.Stream stream, CancellationToken ct)
-    {
-        var buf = new System.IO.MemoryStream();
-        var chunk = new byte[4096];
-        int n;
-        while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15), ct)) > 0)
-        {
-            buf.Write(chunk, 0, n);
-            var all = buf.GetBuffer();
-            int len = (int)buf.Length;
-            for (int k = Math.Max(0, len - n - 3); k <= len - 4; k++)
-                if (all[k] == 13 && all[k + 1] == 10 && all[k + 2] == 13 && all[k + 3] == 10)
-                    return Encoding.ASCII.GetString(all, 0, k + 4);
-        }
-        throw new Exception("Proxy closed the connection before answering CONNECT.");
-    }
-
     private void ShowWebsiteSample(int sample, int total, WebSample s)
     {
         double speedBps = s.BodyBytes / Math.Max(0.001, s.ContentMs / 1000.0);
@@ -1848,19 +1661,12 @@ public partial class MainWindow : Window
         WebsiteStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
     }
 
-    private static string FormatBytes(long bytes) => bytes switch
-    {
-        >= 1_048_576 => (bytes / 1_048_576.0).ToString("F2") + " MB",
-        >= 1024      => (bytes / 1024.0).ToString("F1") + " KB",
-        _            => bytes + " B"
-    };
+    private static string FormatBytes(long bytes) => WebsiteProbe.FormatBytes(bytes);
 
-    private static string FormatSpeed(double bytesPerSec) => bytesPerSec switch
-    {
-        >= 1_048_576 => (bytesPerSec / 1_048_576.0).ToString("F2") + " MB/s",
-        >= 1024      => (bytesPerSec / 1024.0).ToString("F1") + " KB/s",
-        _            => bytesPerSec.ToString("F0") + " B/s"
-    };
+    private static string FormatSpeed(double bytesPerSec) => WebsiteProbe.FormatSpeed(bytesPerSec);
+
+    private static Task<WebSample> RunWebsiteSampleAsync(Uri startUri, Uri? proxy, CancellationToken ct = default)
+        => WebsiteProbe.RunAsync(startUri, proxy, ct);
 
     private void WebsiteClearLog_Click(object? sender, RoutedEventArgs e) => WebsiteLogBox.Text = "";
 
@@ -2002,6 +1808,7 @@ public partial class MainWindow : Window
                                  (s.Via.Length > 0 ? $" · via proxy {s.Via}" : ""), "#4ADE80");
                 AddMonitorLog($"[{DateTime.Now:HH:mm:ss}] OK {s.StatusCode} · {FormatSpeed(sbps)} · TTFB {s.TtfbMs:F1} ms" +
                               (s.Via.Length > 0 ? $" · via proxy {s.Via}" : ""));
+                EvaluateMonitorAlerts(ok: true, s.TtfbMs, null);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -2010,6 +1817,7 @@ public partial class MainWindow : Window
                 UpdateMonitorStats();
                 SetMonitorStatus("Last check failed: " + ex.Message, "#F87171");
                 AddMonitorLog($"[{DateTime.Now:HH:mm:ss}] ERR " + ex.Message);
+                EvaluateMonitorAlerts(ok: false, null, ex.Message);
             }
 
             var next = DateTime.Now.AddMinutes(intervalMin);
@@ -2022,6 +1830,95 @@ public partial class MainWindow : Window
             }
         }
     }
+
+    // ── Monitor threshold alerts (tray balloon + optional webhook) ─────────
+    private int _alertFailStreak, _alertSlowStreak;
+    private bool _alertActive;
+
+    /// <summary>Sliding-window judgement: 2 consecutive failures or 2 slow TTFBs fires once, recovery notifies once.</summary>
+    private void EvaluateMonitorAlerts(bool ok, double? ttfbMs, string? error)
+    {
+        if (MonitorAlertCheck?.IsChecked != true) { _alertFailStreak = _alertSlowStreak = 0; _alertActive = false; return; }
+        double limit = double.TryParse(MonitorAlertTtfb.Text, out var l) && l > 0 ? l : 500;
+
+        if (!ok)
+        {
+            _alertSlowStreak = 0;
+            _alertFailStreak++;
+            if (_alertFailStreak >= 2 && !_alertActive)
+            {
+                _alertActive = true;
+                FireMonitorAlert($"监测告警：目标连续 {_alertFailStreak} 次探测失败 — {Trunc(error ?? "?", 90)}");
+            }
+            return;
+        }
+        // ok == true
+        if (_alertFailStreak >= 2 && _alertActive)
+        {
+            _alertActive = false;
+            FireMonitorAlert($"监测恢复：目标重新可达（TTFB {ttfbMs?.ToString("F0") ?? "?"} ms）");
+        }
+        _alertFailStreak = 0;
+
+        if (ttfbMs != null && ttfbMs > limit)
+        {
+            _alertSlowStreak++;
+            if (_alertSlowStreak >= 2 && !_alertActive)
+            {
+                _alertActive = true;
+                FireMonitorAlert($"监测告警：TTFB {ttfbMs.Value:F0} ms 超过 {limit:F0} ms（连续 {_alertSlowStreak} 次）");
+            }
+        }
+        else
+        {
+            if (_alertSlowStreak >= 2 && _alertActive)
+            {
+                _alertActive = false;
+                FireMonitorAlert($"监测恢复：TTFB 回落至 {ttfbMs?.ToString("F0") ?? "?"} ms");
+            }
+            _alertSlowStreak = 0;
+        }
+    }
+
+    private void FireMonitorAlert(string message)
+    {
+        AddMonitorLog($"[ALERT] {DateTime.Now:HH:mm:ss} — {message}");
+        try
+        {
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = true;
+                _trayIcon.ShowBalloonTip(6000, "SpeedPro 监测告警", message, System.Windows.Forms.ToolTipIcon.Warning);
+            }
+        }
+        catch { }
+        _ = SendMonitorWebhookAsync(message);
+    }
+
+    private async Task SendMonitorWebhookAsync(string message)
+    {
+        string url = MonitorWebhook.Text.Trim();
+        if (url.Length == 0) return;
+        try
+        {
+            using var http = new HttpClient();
+            http.Timeout = TimeSpan.FromSeconds(8);
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("SpeedPro-Alert");
+            string content = JsonEscape(message);
+            string payload = url.Contains("qyapi.weixin.qq.com")
+                ? $"{{\"msgtype\":\"text\",\"text\":{{\"content\":\"{content}\"}}}}"
+                : $"{{\"text\":\"{content}\"}}";
+            await http.PostAsync(url, new StringContent(payload, Encoding.UTF8, "application/json"));
+            AddMonitorLog("[webhook] delivered");
+        }
+        catch (Exception ex)
+        {
+            AddMonitorLog("[webhook] failed: " + ex.Message);
+        }
+    }
+
+    private static string JsonEscape(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
 
     private void DrawMonitorChart()
     {
@@ -2171,6 +2068,7 @@ public partial class MainWindow : Window
     // ── Network Tools: traceroute + DNS benchmark ───────────────────────────
     private bool _traceRunning;
     private Process? _traceProc;
+    private bool _traceStopRequested;
     private readonly List<(int hop, double? bestMs, string ep)> _traceHops = new();
     private bool _dnsRunning;
     private readonly ObservableCollection<DnsRow> _dnsRows = new();
@@ -2193,30 +2091,6 @@ public partial class MainWindow : Window
         TraceStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
     }
 
-    /// <summary>Parses one tracert line: hop number, best latency (any locale unit), endpoint.</summary>
-    private static (int hop, double? bestMs, string ep)? ParseTracertLine(string line)
-    {
-        var tok = line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-        if (tok.Length < 2 || !int.TryParse(tok[0], out var hop) || hop <= 0) return null;
-        var lat = new List<double>();
-        string? endpoint = null;
-        for (int i = 1; i < tok.Length; i++)
-        {
-            string t = tok[i];
-            if (t == "*") continue;
-            string num = t.StartsWith("<") ? t[1..] : t;
-            bool numeric = num.Length > 0 && num.All(char.IsDigit);
-            if (numeric && i + 1 < tok.Length && tok[i + 1] != "*")
-            {
-                // 数字 + 单位 token（ms / 毫秒 / 任何非数字词）
-                if (double.TryParse(num, out var v)) { lat.Add(v); i++; continue; }
-            }
-            if (t.All(c => c < 128) && (t.Contains('.') || t.Contains(':')) && !double.TryParse(t, out _))
-                endpoint = t;
-        }
-        if (endpoint == null && lat.Count == 0) return null;
-        return (hop, lat.Count > 0 ? lat.Min() : (double?)null, endpoint ?? "timeout");
-    }
 
     private void DrawTracerouteRows()
     {
@@ -2279,6 +2153,7 @@ public partial class MainWindow : Window
     {
         if (_traceRunning)
         {
+            _traceStopRequested = true;
             try { _traceProc?.Kill(); } catch { }
             return;
         }
@@ -2286,35 +2161,25 @@ public partial class MainWindow : Window
         if (host.Length == 0) { SetTraceStatus("Please enter a host.", "#F87171"); return; }
 
         _traceRunning = true;
+        _traceStopRequested = false;
         TraceBtn.Content = "Stop";
         _traceHops.Clear();
         TracerouteCanvas.Children.Clear();
         SetTraceStatus($"Tracing route to {host} … (max 30 hops)", "#FBBF24");
         try
         {
-            var psi = new ProcessStartInfo("tracert", $"-d {host}")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
-            try { psi.StandardOutputEncoding = Encoding.GetEncoding(936); } catch { }
-            _traceProc = Process.Start(psi)!;
-            string? line;
-            while ((line = await _traceProc.StandardOutput.ReadLineAsync()) != null)
-            {
-                if (line.Trim().Length == 0) continue;
-                ToolsLogBox.AppendText(line + "\r\n");
-                ToolsLogBox.ScrollToEnd();
-                var hop = ParseTracertLine(line);
-                if (hop != null && hop.Value.hop > 0)
+            _traceHops.AddRange(await WebsiteProbe.RunTracertAsync(host,
+                line =>
                 {
-                    _traceHops.Add(hop.Value);
-                    DrawTracerouteRows();
-                }
-            }
-            await _traceProc.WaitForExitAsync();
-            SetTraceStatus($"Done · {_traceHops.Count} hops recorded", "#4ADE80");
+                    ToolsLogBox.AppendText(line + "\r\n");
+                    ToolsLogBox.ScrollToEnd();
+                },
+                proc => _traceProc = proc,
+                CancellationToken.None));
+            DrawTracerouteRows();
+            SetTraceStatus(_traceStopRequested
+                ? $"Stopped · {_traceHops.Count} hops"
+                : $"Done · {_traceHops.Count} hops recorded", _traceStopRequested ? "#FBBF24" : "#4ADE80");
             AddLog($"Traceroute done: {host} — {_traceHops.Count} hops");
         }
         catch (Exception ex)
@@ -2353,6 +2218,32 @@ public partial class MainWindow : Window
         return sw.Elapsed.TotalMilliseconds;
     }
 
+    /// <summary>DoH (DNS-over-HTTPS) JSON query timing against a public resolver.</summary>
+    private static readonly (string Name, string Url)[] DohServers =
+    {
+        ("AliDNS DoH dns.alidns.com", "https://dns.alidns.com/resolve?name={d}&type=A"),
+        ("DNSPod DoH doh.pub", "https://doh.pub/dns-query?name={d}&type=A"),
+        ("Google DoH dns.google", "https://dns.google/resolve?name={d}&type=A"),
+        ("Cloudflare DoH cloudflare-dns.com", "https://cloudflare-dns.com/dns-query?name={d}&type=A"),
+    };
+
+    private static readonly HttpClient DohHttpClient = new() { Timeout = TimeSpan.FromSeconds(4) };
+
+    private static async Task<double> DohQueryMsAsync(string template, string domain, CancellationToken ct)
+    {
+        using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get,
+            template.Replace("{d}", Uri.EscapeDataString(domain)));
+        req.Headers.UserAgent.ParseAdd("SpeedPro-DnsBench");
+        req.Headers.TryAddWithoutValidation("accept", "application/dns-json");
+        var sw = Stopwatch.StartNew();
+        using var resp = await DohHttpClient.SendAsync(req, ct).WaitAsync(TimeSpan.FromSeconds(4), ct);
+        sw.Stop();
+        string body = await resp.Content.ReadAsStringAsync(ct).WaitAsync(TimeSpan.FromSeconds(2), ct);
+        if (!resp.IsSuccessStatusCode || !body.TrimStart().StartsWith("{") || !body.Contains("Status"))
+            throw new Exception($"invalid DoH response ({(int)resp.StatusCode})");
+        return sw.Elapsed.TotalMilliseconds;
+    }
+
     private async void DnsRunBtn_Click(object? sender, RoutedEventArgs e)
     {
         if (_dnsRunning) return;
@@ -2364,15 +2255,24 @@ public partial class MainWindow : Window
         DnsGrid.ItemsSource = _dnsRows;
         try
         {
-            for (int s = 0; s < DnsServers.Length; s++)
+            bool doh = DnsMode.SelectedIndex == 1;
+            var servers = doh
+                ? DohServers.Select(d => (d.Name, d.Url)).Cast<(string Name, string Key)>().ToList()
+                : DnsServers.Select(d => (d.Name, d.Ip)).Cast<(string Name, string Key)>().ToList();
+            for (int s = 0; s < servers.Count; s++)
             {
-                var (name, ip) = DnsServers[s];
+                var (name, key) = servers[s];
                 SetDnsStatus($"Querying {name} …", "#FBBF24");
                 var times = new List<double>();
                 int fails = 0;
                 for (int i = 0; i < 3; i++)
                 {
-                    try { times.Add(await DnsQueryMsAsync(ip, domain, CancellationToken.None)); }
+                    try
+                    {
+                        times.Add(doh
+                            ? await DohQueryMsAsync(key, domain, CancellationToken.None)
+                            : await DnsQueryMsAsync(key, domain, CancellationToken.None));
+                    }
                     catch { fails++; }
                 }
                 var row = times.Count > 0
@@ -2380,13 +2280,13 @@ public partial class MainWindow : Window
                         times.Average().ToString("F1") + " ms", $"OK ({times.Count}/3)")
                     : new DnsRow(name, "-", "-", "Timeout");
                 _dnsRows.Add(row);
-                ToolsLogBox.AppendText($"[dns] {name} → best {row.Best} / avg {row.Avg} ({row.Result})\r\n");
+                ToolsLogBox.AppendText($"[dns{(doh ? "-doh" : "")}] {name} → best {row.Best} / avg {row.Avg} ({row.Result})\r\n");
                 ToolsLogBox.ScrollToEnd();
-                SetDnsStatus($"Done {s + 1}/{DnsServers.Length} servers", "#FBBF24");
+                SetDnsStatus($"Done {s + 1}/{servers.Count} servers", "#FBBF24");
             }
             var reachable = _dnsRows.Count(r => r.Result.StartsWith("OK"));
-            SetDnsStatus($"Complete · {reachable}/{DnsServers.Length} servers reachable", reachable > 0 ? "#4ADE80" : "#F87171");
-            AddLog($"DNS benchmark done for {domain}: {reachable}/{DnsServers.Length} reachable");
+            SetDnsStatus($"Complete · {reachable}/{servers.Count} servers reachable", reachable > 0 ? "#4ADE80" : "#F87171");
+            AddLog($"DNS benchmark ({(doh ? "DoH" : "UDP")}) done for {domain}: {reachable}/{servers.Count} reachable");
         }
         finally
         {
@@ -2399,6 +2299,409 @@ public partial class MainWindow : Window
     {
         DnsStatus.Text = text;
         DnsStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    // ── Route Monitor (PingPlotter-style per-hop continuous probing) ───────
+    private bool _rmRunning;
+    private CancellationTokenSource? _rmCts;
+    private Uri _rmTarget = new("https://www.baidu.com");
+    private readonly List<string> _rmHopNames = new();          // index 0 = target
+    private readonly List<List<(DateTime t, double? ms)>> _rmSeries = new();
+    private int _rmSamples, _rmOutages, _rmConsecLoss, _rmHopCursor;
+    private bool _rmOutageActive;
+    private DateTime _rmOutageStart;
+    private const int RouteWindowMin = 10;                       // time window kept in memory
+
+    private void SetRouteStatus(string text, string color)
+    {
+        RouteStatus.Text = text;
+        RouteStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    private void AddRouteLog(string msg)
+    {
+        RouteLogBox.AppendText(msg + "\r\n");
+        if (RouteLogBox.Text.Length > 40000) RouteLogBox.Text = RouteLogBox.Text[20000..];
+        RouteLogBox.ScrollToEnd();
+    }
+
+    private async void RouteStartBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_rmRunning)
+        {
+            SetRouteStatus("Stopping…", "#FBBF24");
+            _rmCts?.Cancel();
+            return;
+        }
+        string input = RouteTarget.Text.Trim();
+        if (input.Length == 0) { AddRouteLog("[ERR] Please enter a target."); return; }
+        if (!input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            input = "https://" + input;
+        if (!Uri.TryCreate(input, UriKind.Absolute, out var target) ||
+            (target.Scheme != "http" && target.Scheme != "https"))
+        {
+            AddRouteLog("[ERR] Invalid target '" + input + "'.");
+            return;
+        }
+        _rmTarget = target;
+        int pingMs = RoutePingInterval.SelectedIndex switch { 0 => 1000, 1 => 2000, _ => 5000 };
+        int refreshMin = RouteTraceRefresh.SelectedIndex switch { 0 => 5, 1 => 10, _ => 30 };
+
+        _rmCts = new CancellationTokenSource();
+        _rmRunning = true;
+        _rmSamples = 0; _rmOutages = 0; _rmConsecLoss = 0; _rmOutageActive = false;
+        _rmHopNames.Clear(); _rmSeries.Clear();
+        RouteStartBtn.Content = "Stop";
+        RouteStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#F87171")!;
+        AddRouteLog($"--- Route monitor started: {target} · ping {pingMs / 1000.0:0.#}s · re-trace {refreshMin} min ---");
+        try
+        {
+            // 先只挂目标 hop 立即开始 ping；路由由 refresh 任务异步建立（首次立即 trace）
+            ApplyRoute(new List<string>());
+            _ = MonitorRouteRefreshAsync(refreshMin, _rmCts.Token);
+            await RouteMonLoopAsync(target, pingMs, refreshMin, _rmCts.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetRouteStatus("Failed: " + ex.Message, "#F87171"); AddRouteLog("[ERR] " + ex.Message); }
+        finally
+        {
+            _rmRunning = false;
+            RouteStartBtn.Content = "Start";
+            RouteStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#00E5FF")!;
+            SetRouteStatus($"Stopped · {_rmSamples} target pings · {_rmOutages} outages", "#6F7686");
+        }
+    }
+
+    private void ApplyRoute(List<string> endpoints)
+    {
+        // hop 0 = 目标本身，其余为中间跳
+        var names = new List<string> { _rmTarget.Host };
+        names.AddRange(endpoints);
+        bool changed = names.Count != _rmHopNames.Count ||
+                       names.Zip(_rmHopNames, (a, b) => a != b).Any(x => x);
+        if (changed && _rmHopNames.Count > 0)
+            AddRouteLog($"[route] updated — {names.Count - 1} intermediate hops");
+        _rmHopNames.Clear();
+        _rmHopNames.AddRange(names);
+        if (_rmSeries.Count != names.Count)
+        {
+            _rmSeries.Clear();
+            for (int i = 0; i < names.Count; i++) _rmSeries.Add(new List<(DateTime, double?)>());
+        }
+        DrawRouteLanes();
+    }
+
+    private async Task MonitorRouteRefreshAsync(int refreshMin, CancellationToken ct)
+    {
+        while (true)
+        {
+            try
+            {
+                var hops = await WebsiteProbe.RunTracertAsync(_rmTarget.Host,
+                    line => AddRouteLog("  " + line.TrimEnd()), null, ct);
+                Dispatcher.Invoke(() => ApplyRoute(hops.Select(h => h.Endpoint).ToList()));
+                AddRouteLog($"[route] {hops.Count - 1} intermediate hops · {DateTime.Now:HH:mm:ss}");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { AddRouteLog("[route] trace failed: " + ex.Message); }
+            await Task.Delay(TimeSpan.FromMinutes(refreshMin), ct);
+        }
+    }
+
+    private async Task RouteMonLoopAsync(Uri target, int pingMs, int refreshMin, CancellationToken ct)
+    {
+        SetRouteStatus($"Running · pinging {target.Host} every {pingMs / 1000.0:0.#}s", "#4ADE80");
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            double? rtt = await WebsiteProbe.PingRttAsync(target.Host, 1500, ct);
+            RecordRouteSample(0, rtt);
+            // 断网检测（对目标连续 2 次失败）
+            if (rtt == null)
+            {
+                _rmConsecLoss++;
+                if (_rmConsecLoss >= 2 && !_rmOutageActive)
+                {
+                    _rmOutageActive = true;
+                    _rmOutageStart = DateTime.Now;
+                    _rmOutages++;
+                    AddRouteLog($"[OUTAGE] {DateTime.Now:HH:mm:ss} — target unreachable");
+                }
+            }
+            else
+            {
+                if (_rmOutageActive)
+                {
+                    _rmOutageActive = false;
+                    AddRouteLog($"[RECOVERED] {DateTime.Now:HH:mm:ss} — back after {(DateTime.Now - _rmOutageStart).TotalSeconds:F0}s");
+                }
+                _rmConsecLoss = 0;
+            }
+            // 轮询一个中间跳（每 tick 一个，均摊频率）
+            if (_rmHopNames.Count > 1)
+            {
+                int idx = 1 + (_rmHopCursor % (_rmHopNames.Count - 1));
+                _rmHopCursor++;
+                double? hrtt = await WebsiteProbe.PingRttAsync(_rmHopNames[idx], 1000, ct);
+                RecordRouteSample(idx, hrtt);
+            }
+            _rmSamples++;
+            PruneRouteWindow();
+            DrawRouteLanes();
+            UpdateRouteStats(rtt);
+            SetRouteStatus($"Running · pinging {target.Host} every {pingMs / 1000.0:0.#}s · " +
+                           (rtt != null ? $"last {rtt.Value:F0} ms" : "last: loss"), rtt != null ? "#4ADE80" : "#F87171");
+            await Task.Delay(pingMs, ct);
+        }
+    }
+
+    private void RecordRouteSample(int idx, double? ms)
+    {
+        while (_rmSeries.Count <= idx) _rmSeries.Add(new List<(DateTime, double?)>());
+        _rmSeries[idx].Add((DateTime.Now, ms));
+    }
+
+    private void PruneRouteWindow()
+    {
+        var cutoff = DateTime.Now.AddMinutes(-RouteWindowMin);
+        foreach (var s in _rmSeries) s.RemoveAll(p => p.t < cutoff);
+    }
+
+    private void UpdateRouteStats(double? lastRtt)
+    {
+        RouteStatSamples.Text = _rmSamples.ToString();
+        int sent = 0, lost = 0;
+        if (_rmSeries.Count > 0)
+        {
+            sent = _rmSeries[0].Count;
+            lost = _rmSeries[0].Count(p => p.ms == null);
+        }
+        RouteStatLoss.Text = sent > 0 ? (lost * 100.0 / sent).ToString("F1") + "%" : "0.0%";
+        RouteStatOutages.Text = _rmOutages.ToString();
+        RouteStatRtt.Text = lastRtt != null ? lastRtt.Value.ToString("F0") + " ms" : (sent > 0 ? "loss" : "--");
+    }
+
+    private void DrawRouteLanes()
+    {
+        var canvas = RouteLanesCanvas;
+        if (canvas == null) return;
+        canvas.Children.Clear();
+        double w = canvas.ActualWidth; if (w < 10) w = 600;
+        double h = canvas.ActualHeight;
+        if (_rmHopNames.Count == 0)
+        {
+            var ph = new TextBlock
+            {
+                Text = "Start the monitor to build hop lanes",
+                FontSize = 11, Foreground = (Brush)new BrushConverter().ConvertFrom("#353550")!
+            };
+            canvas.Children.Add(ph);
+            ph.Measure(new Size(w, h));
+            Canvas.SetLeft(ph, Math.Max(0, (w - ph.ActualWidth) / 2));
+            Canvas.SetTop(ph, Math.Max(0, (h - ph.ActualHeight) / 2));
+            return;
+        }
+        double windowSec = RouteWindowMin * 60;
+        var end = DateTime.Now;
+        var start = end.AddSeconds(-windowSec);
+        double labelW = 92, plotL = labelW + 8, plotR = w - 10;
+        double x(DateTime t) => plotL + (t - start).TotalSeconds / windowSec * (plotR - plotL);
+        int lanes = Math.Min(_rmHopNames.Count, 8);
+        double laneH = (h - 26) / lanes;
+        for (int i = 0; i < lanes; i++)
+        {
+            double laneTop = i * laneH + 2;
+            var lbl = new TextBlock
+            {
+                Text = i == 0 ? "▶ " + _rmHopNames[0] : $"{i}. " + Trunc(_rmHopNames[i], 14),
+                FontSize = 10,
+                Foreground = i == 0 ? (Brush)new BrushConverter().ConvertFrom("#00E5FF")!
+                                    : (Brush)new BrushConverter().ConvertFrom("#8A90A8")!,
+                FontFamily = (FontFamily)FindResource("MonoFont")
+            };
+            canvas.Children.Add(lbl);
+            Canvas.SetLeft(lbl, 6); Canvas.SetTop(lbl, laneTop + laneH / 2 - 8);
+            // 分隔线
+            canvas.Children.Add(new Line
+            {
+                X1 = plotL, Y1 = laneTop + laneH, X2 = plotR, Y2 = laneTop + laneH,
+                Stroke = new SolidColorBrush(Color.FromArgb(24, 120, 130, 160)), StrokeThickness = 1
+            });
+            if (i >= _rmSeries.Count) continue;
+            var pts = _rmSeries[i].OrderBy(p => p.t).ToList();
+            double maxMs = Math.Max(30, pts.Where(p => p.ms != null).Select(p => p.ms!.Value).DefaultIfEmpty(30).Max());
+            // 连线（null 断开）
+            double? prevX = null, prevY = null;
+            foreach (var (t, ms) in pts)
+            {
+                if (ms == null)
+                {
+                    // 丢包刻度（泳道顶部红点）
+                    if (x(t) >= plotL)
+                    {
+                        var tick = new System.Windows.Shapes.Rectangle
+                        {
+                            Width = 3, Height = 5, Fill = (Brush)new BrushConverter().ConvertFrom("#F87171")!
+                        };
+                        canvas.Children.Add(tick);
+                        Canvas.SetLeft(tick, x(t));
+                        Canvas.SetTop(tick, laneTop + 1);
+                    }
+                    prevX = prevY = null;
+                    continue;
+                }
+                double cx = x(t), cy = laneTop + laneH - 6 - (ms.Value / maxMs) * (laneH - 12);
+                if (prevX != null && prevX >= plotL && cx >= plotL)
+                {
+                    var color = i == 0 ? "#00E5FF" : "#A78BFA";
+                    canvas.Children.Add(new Line
+                    {
+                        X1 = prevX.Value, Y1 = prevY!.Value, X2 = cx, Y2 = cy,
+                        Stroke = (Brush)new BrushConverter().ConvertFrom(color)!, StrokeThickness = 1.6
+                    });
+                }
+                prevX = cx; prevY = cy;
+            }
+        }
+        // 底部时间轴
+        var startLbl = new TextBlock { Text = start.ToString("HH:mm"), FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")! };
+        canvas.Children.Add(startLbl); Canvas.SetLeft(startLbl, plotL); Canvas.SetTop(startLbl, h - 16);
+        var endLbl = new TextBlock { Text = end.ToString("HH:mm"), FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")! };
+        canvas.Children.Add(endLbl); Canvas.SetLeft(endLbl, plotR - 30); Canvas.SetTop(endLbl, h - 16);
+    }
+
+    private static string Trunc(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
+
+    // ── Traffic usage metering (NetWorx-lite) ──────────────────────────────
+    private readonly Dictionary<string, UsageDay> _usageDays = new();
+    private (ulong rx, ulong tx)? _lastNicRaw;
+    private System.Windows.Threading.DispatcherTimer? _usageTimer;
+
+    private sealed record UsageDay(double Rx, double Tx);
+
+    private string UsagePath => global::System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpeedPro", "usage.json");
+
+    private void StartUsageMeter()
+    {
+        LoadUsage();
+        _usageTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        _usageTimer.Tick += (s, e) => SampleUsage();
+        _usageTimer.Start();
+        SampleUsage();   // 初始化基线（首跳不计数）
+    }
+
+    private void SampleUsage()
+    {
+        try
+        {
+            ulong rx = 0, tx = 0;
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                var st = nic.GetIPStatistics();
+                rx += (ulong)Math.Max(0, st.BytesReceived);
+                tx += (ulong)Math.Max(0, st.BytesSent);
+            }
+            if (_lastNicRaw != null)
+            {
+                ulong drx = rx >= _lastNicRaw.Value.rx ? rx - _lastNicRaw.Value.rx : 0;
+                ulong dtx = tx >= _lastNicRaw.Value.tx ? tx - _lastNicRaw.Value.tx : 0;
+                string day = DateTime.Today.ToString("yyyy-MM-dd");
+                var cur = _usageDays.TryGetValue(day, out var v) ? v : new UsageDay(0, 0);
+                _usageDays[day] = new UsageDay(cur.Rx + drx, cur.Tx + dtx);
+                // 只保留 90 天
+                var cutoff = DateTime.Today.AddDays(-90).ToString("yyyy-MM-dd");
+                foreach (var k in _usageDays.Keys.Where(k => string.Compare(k, cutoff, StringComparison.Ordinal) < 0).ToList())
+                    _usageDays.Remove(k);
+                PersistUsage();
+            }
+            _lastNicRaw = (rx, tx);
+            UpdateUsageUI();
+        }
+        catch { }
+    }
+
+    private void LoadUsage()
+    {
+        try
+        {
+            if (!global::System.IO.File.Exists(UsagePath)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(global::System.IO.File.ReadAllText(UsagePath));
+            var root = doc.RootElement;
+            if (root.TryGetProperty("days", out var days) && days.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var p in days.EnumerateObject())
+                {
+                    if (p.Value.TryGetProperty("Rx", out var rx) && p.Value.TryGetProperty("Tx", out var tx))
+                        _usageDays[p.Name] = new UsageDay(rx.GetDouble(), tx.GetDouble());
+                }
+            }
+            if (root.TryGetProperty("lastRx", out var lrx) && root.TryGetProperty("lastTx", out var ltx))
+                _lastNicRaw = ((ulong)lrx.GetDouble(), (ulong)ltx.GetDouble());
+            if (root.TryGetProperty("quotaGb", out var q) && q.GetDouble() > 0)
+                UsageQuota.Text = q.GetDouble().ToString("F0");
+        }
+        catch { }
+    }
+
+    private void PersistUsage()
+    {
+        try
+        {
+            var obj = new Dictionary<string, object>();
+            foreach (var kv in _usageDays) obj[kv.Key] = new { Rx = kv.Value.Rx, Tx = kv.Value.Tx };
+            if (_lastNicRaw != null)
+            {
+                obj["lastRx"] = (double)_lastNicRaw.Value.rx;
+                obj["lastTx"] = (double)_lastNicRaw.Value.tx;
+            }
+            if (double.TryParse(UsageQuota.Text, out var q) && q > 0) obj["quotaGb"] = q;
+            global::System.IO.File.WriteAllText(UsagePath, System.Text.Json.JsonSerializer.Serialize(obj));
+        }
+        catch { }
+    }
+
+    private void UpdateUsageUI()
+    {
+        if (UsageToday == null || UsageBar == null || UsageNote == null) return;   // XAML 解析中途触发
+        string today = DateTime.Today.ToString("yyyy-MM-dd");
+        string monthPrefix = DateTime.Today.ToString("yyyy-MM");
+        var td = _usageDays.TryGetValue(today, out var t) ? t : new UsageDay(0, 0);
+        UsageToday.Text = $"{Gb(td.Rx)} ↓ / {Gb(td.Tx)} ↑";
+        double mRx = 0, mTx = 0;
+        foreach (var kv in _usageDays.Where(kv => kv.Key.StartsWith(monthPrefix))) { mRx += kv.Value.Rx; mTx += kv.Value.Tx; }
+        UsageMonth.Text = $"{Gb(mRx)} ↓ / {Gb(mTx)} ↑";
+        if (double.TryParse(UsageQuota.Text, out var quota) && quota > 0)
+        {
+            double totalGb = (mRx + mTx) / 1_073_741_824.0;
+            double frac = Math.Clamp(totalGb / quota, 0, 1);
+            UsageBar.Width = frac * 320;
+            UsageNote.Text = $"本月已用 {totalGb:F1} GB / {quota:F0} GB（{frac * 100:F0}%）" +
+                             (frac >= 0.9 ? " — 接近配额上限" : "");
+            UsageNote.Foreground = (Brush)new BrushConverter().ConvertFrom(frac >= 0.9 ? "#F87171" : "#565C74")!;
+        }
+        else
+        {
+            UsageBar.Width = 0;
+            UsageNote.Text = "设置配额后显示用量进度";
+        }
+    }
+
+    private static string Gb(double bytes) => (bytes / 1_073_741_824.0) switch
+    {
+        < 0.01 => "0 GB",
+        var gb => gb.ToString("F2") + " GB"
+    };
+
+    private void UsageQuota_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_loadingConfig) return;
+        PersistUsage();
+        UpdateUsageUI();
     }
 
     // ── Theme follows system ────────────────────────────────────────────────
@@ -2658,6 +2961,7 @@ public partial class MainWindow : Window
         NavWebsite.Content  = Loc.Get("nav.website");
         NavMonitor.Content  = Loc.Get("nav.monitor");
         NavTools.Content    = Loc.Get("nav.tools");
+        NavRouteMon.Content = Loc.Get("nav.routemon");
         NavPing.Content     = Loc.Get("nav.ping");
         NavHistory.Content  = Loc.Get("nav.history");
         NavSettings.Content = Loc.Get("nav.settings");

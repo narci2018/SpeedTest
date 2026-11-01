@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.10.0 — Network Performance Suite"
+        Title="SpeedPro v3.11.0 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -75,6 +75,7 @@
           <RadioButton x:Name="NavEthr"    Content="Ethr Benchmark"    Tag="{StaticResource IcoBenchmark}" Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavPing"    Content="Pingularity"       Tag="{StaticResource IcoPing}"      Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavTools"   Content="Tools"             Tag="{StaticResource IcoTools}"     Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
+          <RadioButton x:Name="NavRouteMon" Content="Route Monitor"    Tag="{StaticResource IcoRoute}"     Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavHistory" Content="History"           Tag="{StaticResource IcoHistory}"   Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
           <RadioButton x:Name="NavSettings" Content="Settings"          Tag="{StaticResource IcoSettings}"  Style="{StaticResource NavRailItem}" Click="Nav_Click" Margin="0,2"/>
         </StackPanel>
@@ -103,7 +104,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.10.0 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.11.0 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -501,6 +502,23 @@
                     <TextBlock x:Name="MonitorStatus" Text="Stopped" FontSize="11"
                                Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
                                TextWrapping="Wrap"/>
+                    <Border Height="1" Background="{DynamicResource StrokeSoftBrush}" Margin="0,10,0,10"/>
+                    <CheckBox x:Name="MonitorAlertCheck" Content="Alerts: 2 consecutive failures or slow TTFB" FontSize="12"
+                              Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"
+                              Margin="0,0,0,8" ToolTip="触发时弹托盘气泡；配置 Webhook 可推送到企业微信/自建服务"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="90"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="TTFB > ms" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="MonitorAlertTtfb" FontSize="12" Padding="8,5" Text="500"
+                               VerticalAlignment="Center" HorizontalAlignment="Left" Width="90"/>
+                      <TextBlock Grid.Column="3" Text="(slow threshold)" FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <TextBox x:Name="MonitorWebhook" FontSize="12" Padding="10,6"
+                             VerticalAlignment="Center" ToolTip="可选。POST {&quot;text&quot;:&quot;…&quot;} JSON；企业微信机器人地址可直接使用"/>
+                    <TextBlock Text="Webhook URL (optional)" FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,4,0,10"/>
                     <TextBlock Text="Runs a 1-sample website check on schedule, in the background; samples persist to monitor.json. Uses the proxy configured in Settings."
                                FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
                                FontFamily="{StaticResource UiFont}" Margin="0,6,0,0" TextWrapping="Wrap"/>
@@ -588,6 +606,36 @@
                       <TextBlock Grid.Row="3" Grid.Column="0" Text="Running since" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
                       <TextBlock Grid.Row="3" Grid.Column="1" x:Name="MonitorStatSince" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
                     </Grid>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="TRAFFIC USAGE" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent2Brush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="34"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="Today ↓ / ↑" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="UsageToday" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="Month ↓ / ↑" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="UsageMonth" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="2" Grid.Column="0" Text="Quota (GB)" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBox Grid.Row="2" Grid.Column="1" x:Name="UsageQuota" FontSize="12" Padding="8,4"
+                               Text="0" Width="90" HorizontalAlignment="Left" VerticalAlignment="Center"
+                               TextChanged="UsageQuota_TextChanged"
+                               ToolTip="月度流量配额（GB），0 = 不显示进度"/>
+                      <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,6,0,0">
+                        <Border Height="10" CornerRadius="5" Background="{DynamicResource StrokeSoftBrush}">
+                          <Border x:Name="UsageBar" Height="10" CornerRadius="5" Background="{DynamicResource AccentGradBrush}"
+                                  HorizontalAlignment="Left" Width="0"/>
+                        </Border>
+                      </Grid>
+                    </Grid>
+                    <TextBlock x:Name="UsageNote" Text="" FontSize="10.5" Foreground="{DynamicResource TextDimBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -1260,6 +1308,16 @@
                       <Button Grid.Column="2" x:Name="DnsRunBtn" Content="Run" Style="{StaticResource PrimaryBtn}"
                               Height="32" Padding="16,0" MinWidth="100" Click="DnsRunBtn_Click"/>
                     </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Mode" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="DnsMode" FontSize="12" Padding="10,6"
+                                Width="110" HorizontalAlignment="Left" SelectedIndex="0" VerticalAlignment="Center"
+                                ToolTip="UDP：经典 53 端口查询；DoH：HTTPS 加密查询（可绕过对 UDP 53 的干扰）">
+                        <ComboBoxItem Content="UDP"/><ComboBoxItem Content="DoH"/>
+                      </ComboBox>
+                    </Grid>
                     <TextBlock x:Name="DnsStatus" Text="Idle" FontSize="11"
                                Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
                                Margin="0,0,0,8"/>
@@ -1293,6 +1351,111 @@
                             BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
                       <Canvas x:Name="PingCanvas" Height="120" ClipToBounds="True"/>
                     </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- ════════════════════ ROUTE MONITOR PANEL ════════════════════ -->
+          <StackPanel x:Name="PanelRouteMon" Grid.Row="0" Visibility="Hidden">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="300"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <!-- Left: controls + log -->
+              <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="ROUTE MONITOR" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Target" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBox Grid.Column="1" x:Name="RouteTarget" FontSize="12" Padding="10,6"
+                               Text="www.baidu.com" VerticalAlignment="Center"
+                               ToolTip="持续探测的目标（域名或 IP）"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Ping every" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="RoutePingInterval" FontSize="12" Padding="10,6"
+                                Width="100" HorizontalAlignment="Left" SelectedIndex="1" VerticalAlignment="Center">
+                        <ComboBoxItem Content="1 s"/><ComboBoxItem Content="2 s"/><ComboBoxItem Content="5 s"/>
+                      </ComboBox>
+                      <Button Grid.Column="2" x:Name="RouteStartBtn" Content="Start" Style="{StaticResource PrimaryBtn}"
+                              Height="32" Padding="20,0" MinWidth="120" Click="RouteStartBtn_Click"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Re-trace" FontSize="11" Foreground="{DynamicResource TextDimBrush}"
+                                 FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" x:Name="RouteTraceRefresh" FontSize="12" Padding="10,6"
+                                Width="100" HorizontalAlignment="Left" SelectedIndex="1" VerticalAlignment="Center">
+                        <ComboBoxItem Content="5 min"/><ComboBoxItem Content="10 min"/><ComboBoxItem Content="30 min"/>
+                      </ComboBox>
+                    </Grid>
+                    <TextBlock x:Name="RouteStatus" Text="Stopped" FontSize="11"
+                               Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"
+                               TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Height="220">
+                  <StackPanel>
+                    <TextBlock Text="ROUTE LOG" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <TextBox x:Name="RouteLogBox" Background="Transparent" BorderThickness="0"
+                               Foreground="{DynamicResource SuccessBrush}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                               HorizontalScrollBarVisibility="Auto" IsReadOnly="True" Padding="10" MaxHeight="175"
+                               VerticalContentAlignment="Top"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <!-- Right: hop lanes + stats -->
+              <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <TextBlock Text="HOP LANES · last 10 min" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Rectangle Width="12" Height="3" Fill="#62CDFF" VerticalAlignment="Center"/>
+                        <TextBlock Text="Target" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" Margin="5,0,12,0"/>
+                        <Rectangle Width="12" Height="3" Fill="#A78BFA" VerticalAlignment="Center"/>
+                        <TextBlock Text="Hops" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" Margin="5,0,0,0"/>
+                      </StackPanel>
+                    </Grid>
+                    <Border CornerRadius="8" Background="{DynamicResource CardSunkenBrush}"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1">
+                      <Canvas x:Name="RouteLanesCanvas" Height="260" ClipToBounds="True"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="SESSION STATS" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent2Brush}"
+                               FontFamily="{StaticResource UiFont}" Margin="0,0,0,8"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="Target pings" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="RouteStatSamples" Text="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="Loss (target)" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="RouteStatLoss" Text="0.0%" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="2" Grid.Column="0" Text="Outages" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="RouteStatOutages" Text="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="3" Grid.Column="0" Text="Last RTT" FontSize="11" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
+                      <TextBlock Grid.Row="3" Grid.Column="1" x:Name="RouteStatRtt" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"/>
+                    </Grid>
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -1485,7 +1648,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.10.0</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.11.0</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.12.1 — Network Performance Suite"
+        Title="SpeedPro v3.13.0 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -104,7 +104,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.12.1 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.13.0 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -957,6 +957,19 @@
                       <Button Grid.Column="2" x:Name="WebsiteRunBtn" Content="Start Test" Style="{StaticResource PrimaryBtn}"
                               Height="32" Padding="20,0" MinWidth="130" Click="WebsiteRun_Click"/>
                     </Grid>
+                    <!-- 测试模式：网页体验 / 带宽下载 -->
+                    <Border Background="{DynamicResource CardSunkenBrush}" CornerRadius="8" Padding="3"
+                            BorderBrush="{DynamicResource StrokeSoftBrush}" BorderThickness="1" Margin="0,0,0,8"
+                            HorizontalAlignment="Left">
+                      <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="TestModeSite" Content="网页体验" Style="{StaticResource SegmentedBtn}"
+                                     IsChecked="True" GroupName="WebsiteTestMode"
+                                     ToolTip="3 次采样测 DNS/TCP/TLS/TTFB 与页面大小（小页面测不出带宽）"/>
+                        <RadioButton x:Name="TestModeBandwidth" Content="带宽下载" Style="{StaticResource SegmentedBtn}"
+                                     GroupName="WebsiteTestMode"
+                                     ToolTip="4 连接并发下载 10 秒，测真实吞吐。URL 请填大文件直链（≥100MB），例如 http://server/big.bin"/>
+                      </StackPanel>
+                    </Border>
                     <CheckBox x:Name="WebsiteUseProxyCheck" Content="启用代理" FontSize="12"
                               Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"
                               Margin="0,0,0,6"
@@ -1663,7 +1676,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.12.1</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.13.0</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

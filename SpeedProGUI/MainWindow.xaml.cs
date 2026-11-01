@@ -1521,7 +1521,31 @@ public partial class MainWindow : Window
         SetWebsiteStatus("Testing " + startUri.Authority + viaText + " …", "#FBBF24");
         try
         {
-            if (targets.Count == 1)
+            // ── 带宽下载模式：4 连接并发下载 10 秒，测真实吞吐 ──
+            if (TestModeBandwidth.IsChecked == true)
+            {
+                if (targets.Count > 1)
+                    AddLog($"Bandwidth mode: using the first URL only ({targets[0]}).");
+                var bwTarget = targets[0];
+                SetWebsiteStatus($"TTFB probe {bwTarget.Authority} …", "#FBBF24");
+                var first = await RunWebsiteSampleAsync(bwTarget, proxy);
+                UpdateWebsiteUI(first);
+                WebsiteTtfb.Text = first.TtfbMs.ToString("F1");
+                StartBwLive(bwTarget.Authority);
+                var (mbps, bytes, secs) = await WebsiteProbe.MeasureDownloadAsync(bwTarget, 4, 10, proxy,
+                    CancellationToken.None, b => Interlocked.Exchange(ref _bwLive, b));
+                StopBwLive();
+                WebsiteSpeed.Text = mbps.ToString("F1") + " Mbps";
+                WebsiteSpeedLabel.Text = "Bandwidth (4-conn × 10s)";
+                WebsiteSpeedMbps.Text = "≈ " + (bytes / Math.Max(0.2, secs) / 1_048_576.0).ToString("F1") + " MB/s";
+                WebsiteLogBox.AppendText(
+                    $"[bandwidth-dl] {FormatBytes(bytes)} in {secs:F1} s → {mbps:F1} Mbps (4-conn × 10s" +
+                    (proxy != null ? $", via proxy {proxy.Authority}" : "") + ")\r\n");
+                WebsiteLogBox.ScrollToEnd();
+                SetWebsiteStatus($"Complete · bandwidth {mbps:F1} Mbps · {FormatBytes(bytes)} in {secs:F1}s" + viaText, "#4ADE80");
+                AddLog($"Bandwidth test done: {bwTarget} — {mbps:F1} Mbps ({FormatBytes(bytes)} in {secs:F1}s, 4-conn)");
+            }
+            else if (targets.Count == 1)
             {
                 const int samples = 3;
                 var results = new List<WebSample>(samples);
@@ -1700,6 +1724,35 @@ public partial class MainWindow : Window
 
     private static Task<WebSample> RunWebsiteSampleAsync(Uri startUri, Uri? proxy, CancellationToken ct = default)
         => WebsiteProbe.RunAsync(startUri, proxy, ct);
+
+    // ── Bandwidth mode live progress ────────────────────────────────────────
+    private long _bwLive;
+    private System.Diagnostics.Stopwatch _bwSw = new();
+    private System.Windows.Threading.DispatcherTimer? _bwTimer;
+    private string _bwTargetName = "";
+
+    private void StartBwLive(string targetName)
+    {
+        _bwLive = 0;
+        _bwTargetName = targetName;
+        _bwSw = Stopwatch.StartNew();
+        _bwTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _bwTimer.Tick += (s, e) =>
+        {
+            long b = System.Threading.Volatile.Read(ref _bwLive);
+            double mbps = b * 8 / Math.Max(0.5, _bwSw.Elapsed.TotalSeconds) / 1e6;
+            SetWebsiteStatus($"Downloading {_bwTargetName} · {FormatBytes(b)} · {mbps:F1} Mbps …", "#FBBF24");
+            WebsiteSpeed.Text = mbps.ToString("F1") + " Mbps";
+            WebsiteSpeedLabel.Text = "Bandwidth (live)";
+        };
+        _bwTimer.Start();
+    }
+
+    private void StopBwLive()
+    {
+        _bwTimer?.Stop();
+        _bwTimer = null;
+    }
 
     private void WebsiteClearLog_Click(object? sender, RoutedEventArgs e) => WebsiteLogBox.Text = "";
 

@@ -102,7 +102,7 @@ public static class WebsiteProbe
     /// Returns aggregated throughput in Mbps and total bytes pulled.
     /// </summary>
     public static async Task<(double Mbps, long TotalBytes, double Seconds)> MeasureDownloadAsync(
-        Uri url, int connections, int seconds, Uri? proxy, CancellationToken ct)
+        Uri url, int connections, int seconds, Uri? proxy, CancellationToken ct, Action<long>? onProgress = null)
     {
         long total = 0;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -117,7 +117,7 @@ public static class WebsiteProbe
                 {
                     string hostHeader = url.IsDefaultPort ? url.Host : url.Authority;
                     string req = $"GET {url.PathAndQuery} HTTP/1.1\r\nHost: {hostHeader}\r\n" +
-                                 "User-Agent: SpeedPro-BandwidthProbe/3.12\r\nAccept: */*\r\nConnection: close\r\n\r\n";
+                                 "User-Agent: SpeedPro-BandwidthProbe/3.13\r\nAccept: */*\r\nConnection: close\r\n\r\n";
                     await stream.WriteAsync(Encoding.ASCII.GetBytes(req), cts.Token);
                     // 读掉响应头
                     var hdr = new MemoryStream();
@@ -140,6 +140,7 @@ public static class WebsiteProbe
                         int n = await stream.ReadAsync(buf, cts.Token);
                         if (n <= 0) break;
                         Interlocked.Add(ref total, n);
+                        onProgress?.Invoke(Interlocked.Read(ref total));
                     }
                 }
             }

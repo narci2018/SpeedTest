@@ -1211,13 +1211,15 @@ public partial class MainWindow : Window
         SetProgress(10);
         try
         {
-            AddLog($"--- Iperf3 {(udp ? "UDP" : "TCP")} {host}:{port} streams={threads} dur={duration}s bufsz={bufsize}KB ---");
+            bool reverse = Iperf3ReverseCheck.IsChecked == true;
+            AddLog($"--- Iperf3 {(udp ? "UDP" : "TCP")} {host}:{port} streams={threads} dur={duration}s bufsz={bufsize}KB{(reverse ? " · reverse (-R, 测下行)" : " · 测上行")} ---");
 
             var args = new StringBuilder();
             args.Append("-c ").Append(host).Append(" -p ").Append(port).Append(" -t ").Append(duration);
             args.Append(" -P ").Append(threads).Append(" --json");
             if (udp) args.Append(" -u");
             args.Append(" -l ").Append(bufsize);
+            if (reverse) args.Append(" -R");   // 服务器发送、本机接收 → 测 VPS→本机 下行
 
             var psi = new ProcessStartInfo(GetExePath("iperf3.exe"), args.ToString())
             { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
@@ -1237,8 +1239,13 @@ public partial class MainWindow : Window
             SetProgress(100);
             double throughput = ParseIperf3Json(json);
             // 点对点吞吐也入历史（历史页过滤器本就有 iperf3 项）
-            SaveHistory("iperf3", throughput, 0, 0, 0, host, udp ? "UDP" : "TCP",
-                host + ":" + port, GetQualityLabel(CalculateScore(throughput, 0, 0, 0)));
+            // 方向语义：默认（客户端发送）= 上行 → 记 Upload；-R 反向 = 下行 → 记 Download
+            if (reverse)
+                SaveHistory("iperf3", throughput, 0, 0, 0, host, (udp ? "UDP" : "TCP") + " ↓",
+                    host + ":" + port, GetQualityLabel(CalculateScore(throughput, 0, 0, 0)));
+            else
+                SaveHistory("iperf3", 0, throughput, 0, 0, host, (udp ? "UDP" : "TCP") + " ↑",
+                    host + ":" + port, GetQualityLabel(CalculateScore(throughput, 0, 0, 0)));
             StatusLeft.Text = Loc.Get("status.iperfdone");
             AddLog("Iperf3 test finished");
         }

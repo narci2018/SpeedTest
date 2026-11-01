@@ -23,6 +23,7 @@
   <Geometry x:Key="IcoPalette">M10,3 A7,7 0 1 0 10,17 C11.7,17 11.4,15.6 10.8,14.7 C10,13.5 11,12.2 12.6,12.2 L15.2,12.2 A2,2 0 0 0 17,10.2 C17,6.2 13.9,3 10,3 Z</Geometry>
   <Geometry x:Key="IcoDownload">M10,3 L10,13 M10,13 L5.5,8.5 M10,13 L14.5,8.5 M3.5,16.5 L16.5,16.5</Geometry>
   <Geometry x:Key="IcoUpload">M10,17 L10,7 M10,7 L5.5,11.5 M10,7 L14.5,11.5 M3.5,3.5 L16.5,3.5</Geometry>
+  <Geometry x:Key="IcoMonitor">M2,10 L6.2,10 L8.2,4.5 L11.8,15.5 L13.8,10 L18,10</Geometry>
   <Geometry x:Key="IcoClose">M0,0 L10,10 M10,0 L0,10</Geometry>
   <Geometry x:Key="IcoMin">M0,0 L10,0</Geometry>
   <Geometry x:Key="IcoMax">M0,0 L10,0 L10,10 L0,10 Z</Geometry>

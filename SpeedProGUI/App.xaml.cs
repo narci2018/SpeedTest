@@ -4,16 +4,35 @@ using System.Windows.Markup;
 
 namespace SpeedPro;
 
-public partial class App : Application
+using MessageBox = System.Windows.MessageBox;
+
+public partial class App : System.Windows.Application
 {
     // Keep a strong reference to the active theme so GC doesn't collect it
     private ResourceDictionary? _activeTheme;
     public ResourceDictionary? ActiveTheme => _activeTheme;
+    private Mutex? _singleInstanceMutex;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Single instance: 带信号量的命名互斥体，二次启动直接提示退出
+        _singleInstanceMutex = new Mutex(true, @"Local\SpeedPro_SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show("SpeedPro 已在运行中。", "SpeedPro",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
         base.OnStartup(e);
         LoadTheme("DarkTech");
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _singleInstanceMutex?.ReleaseMutex();
+        _singleInstanceMutex?.Dispose();
+        base.OnExit(e);
     }
 
     /// <summary>

@@ -17,10 +17,23 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Shell;
 
+// WinForms（托盘）与 WPF 类型歧义消歧
+using Point = System.Windows.Point;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MessageBox = System.Windows.MessageBox;
+using RadioButton = System.Windows.Controls.RadioButton;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using Clipboard = System.Windows.Clipboard;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Size = System.Windows.Size;
+using Application = System.Windows.Application;
+
 namespace SpeedPro;
 
 public enum EngineType { SpeedTestGo, LibreSpeed }
-public enum NavPage { Test, Iperf3, Ethr, Website, Pingularity, History, Settings }
+public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, History, Settings }
 
 public record HistoryEntry(
     string Time, string Engine, double Download, double Upload,
@@ -87,7 +100,10 @@ public partial class MainWindow : Window
         ApplyLanguage();
         LoadConfig();
         LoadHistory();
+        LoadMonitor();
+        InitTrayIcon();
         HistoryChartCanvas.SizeChanged += (s, e) => { if (HistoryGrid != null) ApplyHistoryFilter(); };
+        MonitorChartCanvas.SizeChanged += (s, e) => DrawMonitorChart();
         _ = CheckForUpdatesAsync(manual: false);
         _ = AnimationLoop();
         _ = TempShot();
@@ -104,9 +120,10 @@ public partial class MainWindow : Window
         {
             var tag = pArg[5..].ToLowerInvariant() switch
             {
+                "website"  => "website",
+                "monitor"  => "monitor",
                 "iperf3"   => "iperf3",
                 "ethr"     => "ethr",
-                "website"  => "website",
                 "ping"     => "pingularity",
                 "history"  => "history",
                 "settings" => "settings",
@@ -114,7 +131,8 @@ public partial class MainWindow : Window
             };
             _currentPage = tag switch
             {
-                "iperf3" => NavPage.Iperf3, "ethr" => NavPage.Ethr, "website" => NavPage.Website,
+                "website" => NavPage.Website, "monitor" => NavPage.Monitor,
+                "iperf3" => NavPage.Iperf3, "ethr" => NavPage.Ethr,
                 "pingularity" => NavPage.Pingularity,
                 "history" => NavPage.History, "settings" => NavPage.Settings, _ => NavPage.Test
             };
@@ -191,6 +209,7 @@ public partial class MainWindow : Window
         { nameof(NavIperf3),  "iperf3" },
         { nameof(NavEthr),    "ethr" },
         { nameof(NavWebsite), "website" },
+        { nameof(NavMonitor), "monitor" },
         { nameof(NavPing),    "pingularity" },
         { nameof(NavHistory), "history" },
         { nameof(NavSettings),"settings" },
@@ -203,9 +222,10 @@ public partial class MainWindow : Window
         _currentPage = tag switch
         {
             "test"       => NavPage.Test,
+            "website"    => NavPage.Website,
+            "monitor"    => NavPage.Monitor,
             "iperf3"     => NavPage.Iperf3,
             "ethr"       => NavPage.Ethr,
-            "website"    => NavPage.Website,
             "pingularity"=> NavPage.Pingularity,
             "history"    => NavPage.History,
             "settings"   => NavPage.Settings,
@@ -218,9 +238,10 @@ public partial class MainWindow : Window
     private void SetNavActive(string tag)
     {
         NavTest.IsChecked     = tag == "test";
+        NavWebsite.IsChecked  = tag == "website";
+        NavMonitor.IsChecked  = tag == "monitor";
         NavIperf3.IsChecked   = tag == "iperf3";
         NavEthr.IsChecked     = tag == "ethr";
-        NavWebsite.IsChecked  = tag == "website";
         NavPing.IsChecked     = tag == "pingularity";
         NavHistory.IsChecked  = tag == "history";
         NavSettings.IsChecked = tag == "settings";
@@ -229,20 +250,23 @@ public partial class MainWindow : Window
     private void ShowPage(NavPage page)
     {
         PanelTest.Visibility         = page == NavPage.Test          ? Visibility.Visible : Visibility.Collapsed;
+        PanelWebsite.Visibility      = page == NavPage.Website       ? Visibility.Visible : Visibility.Collapsed;
+        PanelMonitor.Visibility      = page == NavPage.Monitor       ? Visibility.Visible : Visibility.Collapsed;
         PanelIperf3.Visibility       = page == NavPage.Iperf3        ? Visibility.Visible : Visibility.Collapsed;
         PanelEthr.Visibility         = page == NavPage.Ethr          ? Visibility.Visible : Visibility.Collapsed;
-        PanelWebsite.Visibility      = page == NavPage.Website       ? Visibility.Visible : Visibility.Collapsed;
         PanelPingularity.Visibility  = page == NavPage.Pingularity   ? Visibility.Visible : Visibility.Collapsed;
         PanelHistory.Visibility      = page == NavPage.History       ? Visibility.Visible : Visibility.Collapsed;
         PanelSettings.Visibility     = page == NavPage.Settings      ? Visibility.Visible : Visibility.Collapsed;
         // The log + summary row only belongs to the broadband test page
         BottomRow.Visibility         = page == NavPage.Test          ? Visibility.Visible : Visibility.Collapsed;
         if (page == NavPage.History) ApplyHistoryFilter();
+        if (page == NavPage.Monitor) DrawMonitorChart();
         HeaderTitle.Text = page switch
         {
+            NavPage.Website    => Loc.Get("title.website"),
+            NavPage.Monitor    => Loc.Get("title.monitor"),
             NavPage.Iperf3     => Loc.Get("title.iperf3"),
             NavPage.Ethr       => Loc.Get("title.ethr"),
-            NavPage.Website    => Loc.Get("title.website"),
             NavPage.Pingularity=> Loc.Get("title.ping"),
             NavPage.History    => Loc.Get("title.history"),
             NavPage.Settings   => Loc.Get("title.settings"),
@@ -1016,14 +1040,20 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (!global::System.IO.File.Exists(ConfigPath)) { UpdateProxyState(); return; }
-            using var doc = System.Text.Json.JsonDocument.Parse(global::System.IO.File.ReadAllText(ConfigPath));
-            if (doc.RootElement.TryGetProperty("proxy", out var p))
+            if (global::System.IO.File.Exists(ConfigPath))
             {
+                using var doc = System.Text.Json.JsonDocument.Parse(global::System.IO.File.ReadAllText(ConfigPath));
                 _loadingConfig = true;
-                SettingProxy.Text = p.GetString() ?? "";
+                if (doc.RootElement.TryGetProperty("proxy", out var p))
+                    SettingProxy.Text = p.GetString() ?? "";
+                if (doc.RootElement.TryGetProperty("tray", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.True)
+                    SetTrayCheck.IsChecked = true;
                 _loadingConfig = false;
             }
+            // 开机自启的真相来源是注册表
+            SetAutoStartCheck.IsChecked = global::Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")
+                ?.GetValue("SpeedPro") != null;
             UpdateProxyState();
         }
         catch { }
@@ -1035,9 +1065,34 @@ public partial class MainWindow : Window
         {
             global::System.IO.Directory.CreateDirectory(global::System.IO.Path.GetDirectoryName(ConfigPath)!);
             string val = SettingProxy.Text.Trim().Replace("\\", "\\\\").Replace("\"", "\\\"");
-            global::System.IO.File.WriteAllText(ConfigPath, "{\"proxy\":\"" + val + "\"}");
+            string tray = SetTrayCheck.IsChecked == true ? "true" : "false";
+            global::System.IO.File.WriteAllText(ConfigPath, "{\"proxy\":\"" + val + "\",\"tray\":" + tray + "}");
         }
         catch { }
+    }
+
+    private void TrayCheck_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig) return;
+        SaveConfig();
+    }
+
+    private void AutoStart_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig) return;
+        try
+        {
+            using var key = global::Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+            if (key == null) return;
+            if (SetAutoStartCheck.IsChecked == true)
+            {
+                string exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "";
+                if (exe.Length > 0) key.SetValue("SpeedPro", "\"" + exe + "\"");
+            }
+            else key.DeleteValue("SpeedPro", false);
+        }
+        catch (Exception ex) { AddLog("Autostart update failed: " + ex.Message); }
     }
 
     private void UpdateProxyState()
@@ -1497,7 +1552,7 @@ public partial class MainWindow : Window
     /// following up to 5 redirects (http→https etc.). Connection: close; 25 MB cap.
     /// When a proxy is set, DNS/TCP target the proxy and a CONNECT tunnel carries the TLS.
     /// </summary>
-    private static async Task<WebSample> RunWebsiteSampleAsync(Uri startUri, Uri? proxy)
+    private static async Task<WebSample> RunWebsiteSampleAsync(Uri startUri, Uri? proxy, CancellationToken ct = default)
     {
         var uri = startUri;
         int redirects = 0;
@@ -1508,7 +1563,7 @@ public partial class MainWindow : Window
             int connectPort = proxy?.Port ?? uri.Port;
             var sw = Stopwatch.StartNew();
             IPAddress[] addrs;
-            try { addrs = await Dns.GetHostAddressesAsync(connectHost).WaitAsync(TimeSpan.FromSeconds(6)); }
+            try { addrs = await Dns.GetHostAddressesAsync(connectHost).WaitAsync(TimeSpan.FromSeconds(6), ct); }
             catch (TimeoutException) { throw new Exception("DNS lookup timed out (>6s): " + connectHost); }
             if (addrs.Length == 0) throw new Exception("DNS found no address for " + connectHost);
             var ipAddr = addrs.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addrs[0];
@@ -1523,7 +1578,7 @@ public partial class MainWindow : Window
             try
             {
                 sw.Restart();
-                try { await socket.ConnectAsync(new IPEndPoint(ipAddr, connectPort), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(8)); }
+                try { await socket.ConnectAsync(new IPEndPoint(ipAddr, connectPort), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(8), ct); }
                 catch (TimeoutException) { throw new Exception($"TCP connect timed out (>8s): {connectHost}:{connectPort}"); }
                 catch (SocketException se) { throw new Exception($"TCP connect failed: {se.SocketErrorCode} → {connectHost}:{connectPort}"); }
                 tcpMs = sw.Elapsed.TotalMilliseconds;
@@ -1534,8 +1589,8 @@ public partial class MainWindow : Window
                 {
                     string authority = uri.Host + ":" + uri.Port;   // always include port (curl-compatible)
                     string connectReq = $"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: keep-alive\r\n\r\n";
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes(connectReq), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
-                    string resp = await ReadProxyConnectResponseAsync(stream);
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(connectReq), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
+                    string resp = await ReadProxyConnectResponseAsync(stream, ct);
                     var cm = System.Text.RegularExpressions.Regex.Match(resp, @"HTTP/\d(?:\.\d)?\s+(\d{3})");
                     if (!cm.Success || cm.Groups[1].Value != "200")
                         throw new Exception("Proxy CONNECT failed: " + resp.Split("\r\n")[0]);
@@ -1549,7 +1604,7 @@ public partial class MainWindow : Window
                     {
                         await ssl.AuthenticateAsClientAsync(
                                 new SslClientAuthenticationOptions { TargetHost = uri.Host }, CancellationToken.None)
-                            .WaitAsync(TimeSpan.FromSeconds(8));
+                            .WaitAsync(TimeSpan.FromSeconds(8), ct);
                     }
                     catch (TimeoutException) { throw new Exception("TLS handshake timed out (>8s): " + uri.Host); }
                     catch (System.Security.Authentication.AuthenticationException aex)
@@ -1573,7 +1628,7 @@ public partial class MainWindow : Window
                              "Connection: close\r\n\r\n";
                 var reqBytes = Encoding.ASCII.GetBytes(req);
                 var totalSw = Stopwatch.StartNew();
-                await stream.WriteAsync(reqBytes, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+                await stream.WriteAsync(reqBytes, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
 
                 // Read until end of headers → TTFB = first byte received
                 var headerBuf = new System.IO.MemoryStream();
@@ -1584,7 +1639,7 @@ public partial class MainWindow : Window
                 try
                 {
                     while (!headerDone &&
-                           (n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15))) > 0)
+                           (n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15), ct)) > 0)
                     {
                         if (ttfbMs == 0) ttfbMs = Math.Max(0.05, totalSw.Elapsed.TotalMilliseconds);
                         headerBuf.Write(chunk, 0, n);
@@ -1639,7 +1694,7 @@ public partial class MainWindow : Window
                 long bodyBytes = tail;
                 try
                 {
-                    while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(20))) > 0)
+                    while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(20), ct)) > 0)
                     {
                         bodyBytes += n;
                         if (bodyBytes > 25_000_000) break;   // 25 MB politeness cap
@@ -1666,12 +1721,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Reads a CONNECT response (headers only) from the proxy tunnel.</summary>
-    private static async Task<string> ReadProxyConnectResponseAsync(System.IO.Stream stream)
+    private static async Task<string> ReadProxyConnectResponseAsync(System.IO.Stream stream, CancellationToken ct)
     {
         var buf = new System.IO.MemoryStream();
         var chunk = new byte[4096];
         int n;
-        while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15))) > 0)
+        while ((n = await stream.ReadAsync(chunk, CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(15), ct)) > 0)
         {
             buf.Write(chunk, 0, n);
             var all = buf.GetBuffer();
@@ -1771,6 +1826,211 @@ public partial class MainWindow : Window
 
     private void WebsiteClearLog_Click(object? sender, RoutedEventArgs e) => WebsiteLogBox.Text = "";
 
+    // ── Continuous Monitor ──────────────────────────────────────────────────
+    private bool _monitorRunning;
+    private CancellationTokenSource? _monitorCts;
+    private DateTime _monitorStartedAt;
+    private int _monitorFailures;
+    private readonly ObservableCollection<MonitorSampleRec> _monitorSamples = new();
+
+    private sealed record MonitorSampleRec(string Time, double SpeedMbps, double TtfbMs);
+
+    private string MonitorPath => global::System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpeedPro", "monitor.json");
+
+    private void LoadMonitor()
+    {
+        try
+        {
+            if (!global::System.IO.File.Exists(MonitorPath)) return;
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<MonitorSampleRec>>(
+                global::System.IO.File.ReadAllText(MonitorPath));
+            if (list == null) return;
+            foreach (var m in list.TakeLast(240)) _monitorSamples.Add(m);
+            DrawMonitorChart();
+            UpdateMonitorStats();
+        }
+        catch { }
+    }
+
+    private void PersistMonitor()
+    {
+        try
+        {
+            global::System.IO.Directory.CreateDirectory(global::System.IO.Path.GetDirectoryName(MonitorPath)!);
+            global::System.IO.File.WriteAllText(MonitorPath,
+                System.Text.Json.JsonSerializer.Serialize(_monitorSamples.ToList()));
+        }
+        catch { }
+    }
+
+    private void AddMonitorLog(string msg)
+    {
+        MonitorLogBox.AppendText(msg + "\r\n");
+        if (MonitorLogBox.Text.Length > 40000)
+            MonitorLogBox.Text = MonitorLogBox.Text[20000..];
+        MonitorLogBox.ScrollToEnd();
+    }
+
+    private void SetMonitorStatus(string text, string color)
+    {
+        MonitorStatus.Text = text;
+        MonitorStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    private void UpdateMonitorStats()
+    {
+        MonitorStatSamples.Text = _monitorSamples.Count.ToString();
+        MonitorStatTtfb.Text = _monitorSamples.Count > 0
+            ? _monitorSamples.Average(m => m.TtfbMs).ToString("F1") + " ms"
+            : "--";
+        MonitorStatFail.Text = _monitorFailures.ToString();
+        MonitorStatSince.Text = _monitorRunning ? _monitorStartedAt.ToString("HH:mm:ss") : "--";
+    }
+
+    private async void MonitorStart_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_monitorRunning)
+        {
+            SetMonitorStatus("Stopping… (finishes the in-flight check first)", "#FBBF24");
+            _monitorCts?.Cancel();
+            return;
+        }
+        string input = MonitorUrl.Text.Trim();
+        if (input.Length == 0) { AddMonitorLog("[ERR] Please enter a target URL."); return; }
+        if (!input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            input = "https://" + input;
+        if (!Uri.TryCreate(input, UriKind.Absolute, out var target) ||
+            (target.Scheme != "http" && target.Scheme != "https"))
+        {
+            AddMonitorLog("[ERR] Invalid URL '" + input + "'.");
+            return;
+        }
+
+        Uri? proxy = null;
+        string proxyText = SettingProxy.Text.Trim();
+        if (proxyText.Length > 0)
+        {
+            if (!proxyText.Contains("://", StringComparison.Ordinal)) proxyText = "http://" + proxyText;
+            Uri.TryCreate(proxyText, UriKind.Absolute, out proxy);
+        }
+        int intervalMin = (MonitorInterval.SelectedIndex switch
+        { 0 => 5, 1 => 10, 2 => 15, 3 => 30, _ => 60 });
+
+        _monitorCts = new CancellationTokenSource();
+        _monitorRunning = true;
+        _monitorFailures = 0;
+        _monitorStartedAt = DateTime.Now;
+        MonitorStartBtn.Content = "Stop Monitor";
+        MonitorStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#F87171")!;
+        UpdateMonitorStats();
+        AddMonitorLog($"--- Monitor started: {target} every {intervalMin} min" +
+                       (proxy != null ? $" via proxy {proxy.Authority}" : "") + " ---");
+        try { await MonitorLoopAsync(target, proxy, intervalMin, _monitorCts.Token); }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _monitorRunning = false;
+            MonitorStartBtn.Content = "Start Monitor";
+            MonitorStartBtn.Background = (Brush)new BrushConverter().ConvertFrom("#00E5FF")!;
+            SetMonitorStatus($"Stopped · {_monitorSamples.Count} samples collected", "#6F7686");
+            UpdateMonitorStats();
+        }
+    }
+
+    private async Task MonitorLoopAsync(Uri target, Uri? proxy, int intervalMin, CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            SetMonitorStatus($"Checking {target.Authority} …", "#FBBF24");
+            try
+            {
+                var s = await RunWebsiteSampleAsync(target, proxy, ct);
+                double sbps = s.BodyBytes / Math.Max(0.001, s.ContentMs / 1000.0);
+                var rec = new MonitorSampleRec(
+                    DateTime.Now.ToString("MM-dd HH:mm"),
+                    Math.Round(sbps / 1_048_576.0, 3),
+                    Math.Round(s.TtfbMs, 1));
+                _monitorSamples.Add(rec);
+                if (_monitorSamples.Count > 240) _monitorSamples.RemoveAt(0);
+                PersistMonitor();
+                DrawMonitorChart();
+                UpdateMonitorStats();
+                MonitorHeroSpeed.Text = FormatSpeed(sbps);
+                MonitorHeroTtfb.Text = s.TtfbMs.ToString("F1");
+                SetMonitorStatus($"Last check {DateTime.Now:HH:mm:ss} · {s.StatusCode} · TTFB {s.TtfbMs:F1} ms" +
+                                 (s.Via.Length > 0 ? $" · via proxy {s.Via}" : ""), "#4ADE80");
+                AddMonitorLog($"[{DateTime.Now:HH:mm:ss}] OK {s.StatusCode} · {FormatSpeed(sbps)} · TTFB {s.TtfbMs:F1} ms" +
+                              (s.Via.Length > 0 ? $" · via proxy {s.Via}" : ""));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _monitorFailures++;
+                UpdateMonitorStats();
+                SetMonitorStatus("Last check failed: " + ex.Message, "#F87171");
+                AddMonitorLog($"[{DateTime.Now:HH:mm:ss}] ERR " + ex.Message);
+            }
+
+            var next = DateTime.Now.AddMinutes(intervalMin);
+            while (DateTime.Now < next)
+            {
+                ct.ThrowIfCancellationRequested();
+                SetMonitorStatus($"Running · every {intervalMin} min · next check at {next:HH:mm:ss} " +
+                                 $"({(int)(next - DateTime.Now).TotalSeconds}s)", "#4ADE80");
+                await Task.Delay(1000, ct);
+            }
+        }
+    }
+
+    private void DrawMonitorChart()
+    {
+        var canvas = MonitorChartCanvas;
+        if (canvas == null) return;
+        canvas.Children.Clear();
+        var items = _monitorSamples.TakeLast(120).ToList();
+        MonitorTrendTitle.Text = $"MONITOR TREND · {items.Count} samples";
+        double w = canvas.ActualWidth, h = canvas.ActualHeight;
+        if (w < 10 || h < 10) return;
+        if (items.Count < 2)
+        {
+            var tb = new TextBlock
+            {
+                Text = "Start the monitor to collect samples",
+                FontSize = 11,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#353550")!
+            };
+            canvas.Children.Add(tb);
+            tb.Measure(new Size(w, h));
+            Canvas.SetLeft(tb, Math.Max(0, (w - tb.ActualWidth) / 2));
+            Canvas.SetTop(tb, Math.Max(0, (h - tb.ActualHeight) / 2));
+            return;
+        }
+        for (int i = 0; i <= 4; i++)
+            canvas.Children.Add(new Line
+            {
+                X1 = 0, Y1 = h * i / 4, X2 = w, Y2 = h * i / 4,
+                Stroke = new SolidColorBrush(Color.FromArgb(20, 120, 130, 160)), StrokeThickness = 1
+            });
+        double maxSpeed = Math.Max(items.Max(m => m.SpeedMbps), 0.05);
+        double maxTtfb = Math.Max(items.Max(m => m.TtfbMs), 1);
+        Point Plot(int i, double v, double max) =>
+            new(3 + i * (w - 6) / (items.Count - 1), h - 8 - (v / max) * (h - 20));
+        AddPolyline(canvas, items.Select((m, i) => Plot(i, m.SpeedMbps, maxSpeed)).ToList(), "#62CDFF", 2);
+        AddPolyline(canvas, items.Select((m, i) => Plot(i, m.TtfbMs, maxTtfb)).ToList(), "#FFD740", 1.5);
+        var lblL = new TextBlock { Text = maxSpeed.ToString("F2") + " Mbps", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")! };
+        canvas.Children.Add(lblL);
+        var lblR = new TextBlock { Text = maxTtfb.ToString("F0") + " ms", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")! };
+        canvas.Children.Add(lblR);
+        lblR.Measure(new Size(w, h));
+        Canvas.SetLeft(lblR, w - lblR.ActualWidth - 6);
+        Canvas.SetTop(lblR, 4);
+    }
+
     // ── Pingularity ─────────────────────────────────────────────────────────
     private void PingularityStart_Click(object? sender, RoutedEventArgs e)
     {
@@ -1812,9 +2072,49 @@ public partial class MainWindow : Window
                     PingularityStatus.Text = $"Service running on :{port} (healthy)";
                     PingularityDashUrl.Text = "http://127.0.0.1:" + port;
                 });
+                await InitPingDashboardAsync($"http://127.0.0.1:{port}");
             }
         }
         catch { /* daemon may still be starting */ }
+    }
+
+    // ── Embedded Pingularity dashboard (WebView2) ──────────────────────────
+    private Microsoft.Web.WebView2.Wpf.WebView2? _pingWebView;
+
+    private async Task InitPingDashboardAsync(string url)
+    {
+        try
+        {
+            if (_pingWebView == null)
+            {
+                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                    userDataFolder: global::System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpeedPro", "WebView2"));
+                _pingWebView = new Microsoft.Web.WebView2.Wpf.WebView2 { DefaultBackgroundColor = System.Drawing.Color.Transparent };
+                PingDashboardHost.Children.Clear();
+                PingDashboardHost.Children.Add(_pingWebView);
+                await _pingWebView.EnsureCoreWebView2Async(env);
+            }
+            PingDashboardPlaceholder.Visibility = Visibility.Collapsed;
+            _pingWebView.Visibility = Visibility.Visible;
+            _pingWebView.CoreWebView2.Navigate(url);
+            AddLog("Pingularity dashboard embedded (WebView2).");
+        }
+        catch (Exception ex)
+        {
+            AddLog("WebView2 unavailable, use Open Dashboard instead: " + ex.Message);
+        }
+    }
+
+    private async void PingDashboardReconnect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_pingularity == null || _pingularity.HasExited)
+        {
+            AddLog("Pingularity not running. Start the service first.");
+            return;
+        }
+        int port = int.TryParse(PingularityPort.Text, out var p) ? p : 19000;
+        await InitPingDashboardAsync("http://127.0.0.1:" + port);
     }
 
     private void PingularityOpenDashboard_Click(object? sender, RoutedEventArgs e)
@@ -1916,6 +2216,7 @@ public partial class MainWindow : Window
         NavIperf3.Content   = Loc.Get("nav.iperf3");
         NavEthr.Content     = Loc.Get("nav.ethr");
         NavWebsite.Content  = Loc.Get("nav.website");
+        NavMonitor.Content  = Loc.Get("nav.monitor");
         NavPing.Content     = Loc.Get("nav.ping");
         NavHistory.Content  = Loc.Get("nav.history");
         NavSettings.Content = Loc.Get("nav.settings");
@@ -1951,6 +2252,9 @@ public partial class MainWindow : Window
         SetThreadsLabel.Text    = Loc.Get("set.threads");
         SetEnginesLabel.Text    = Loc.Get("set.engines");
         SetAppearanceTitle.Text = Loc.Get("set.appearance");
+        SetGeneralTitle.Text    = Loc.Get("set.general");
+        SetTrayCheck.Content    = Loc.Get("set.tray");
+        SetAutoStartCheck.Content = Loc.Get("set.autostart");
         SetProxyTitle.Text      = Loc.Get("set.proxy");
         SetProxyHint.Text       = Loc.Get("set.proxy.hint");
         WebsiteProxyHint.Text   = Loc.Get("web.proxy.tip");
@@ -2133,6 +2437,51 @@ public partial class MainWindow : Window
         _ethrServer?.Kill();
         _iperf3Server?.Kill();
         _pingularity?.Kill();
+        _monitorCts?.Cancel();
+        if (_trayIcon != null) { _trayIcon.Visible = false; _trayIcon.Dispose(); _trayIcon = null; }
+    }
+
+    // ── Tray icon (minimize-to-tray) ───────────────────────────────────────
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+
+    private bool MinimizeToTray => SetTrayCheck?.IsChecked == true;
+
+    private void InitTrayIcon()
+    {
+        try
+        {
+            _trayIcon = new System.Windows.Forms.NotifyIcon
+            {
+                Icon = System.Drawing.SystemIcons.Application,
+                Text = "SpeedPro",
+                Visible = false
+            };
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+            menu.Items.Add("打开 SpeedPro", null, (s, e) => RestoreFromTray());
+            menu.Items.Add("退出", null, (s, e) => { RestoreFromTray(); Close(); });
+            _trayIcon.ContextMenuStrip = menu;
+            _trayIcon.DoubleClick += (s, e) => RestoreFromTray();
+        }
+        catch { }
+    }
+
+    private void Window_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized && MinimizeToTray) HideToTray();
+    }
+
+    private void HideToTray()
+    {
+        if (_trayIcon != null) _trayIcon.Visible = true;
+        Hide();
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+        if (_trayIcon != null) _trayIcon.Visible = false;
     }
 
     private static string GetExePath(string name)

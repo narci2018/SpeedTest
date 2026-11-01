@@ -6,7 +6,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>SpeedPro</AssemblyName>
     <RootNamespace>SpeedPro</RootNamespace>
-    <Version>3.6.1</Version>
+    <Version>3.8.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -14,11 +14,14 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <UseWindowsForms>false</UseWindowsForms>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <!-- Theme XAML files: compile as embedded resources AND copy to output dir -->
   <ItemGroup>
     <Resource Include="Themes\*.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 </Project>

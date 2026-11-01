@@ -1492,11 +1492,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Optional proxy (Settings → Proxy Server), e.g. http://127.0.0.1:7890
+        // 代理开关：默认直连；勾选「启用代理」后才使用 设置 → 代理服务器 的代理
         Uri? proxy = null;
-        string proxyText = SettingProxy.Text.Trim();
-        if (proxyText.Length > 0)
+        if (WebsiteUseProxyCheck?.IsChecked == true)
         {
+            string proxyText = SettingProxy.Text.Trim();
+            if (proxyText.Length == 0)
+            {
+                SetWebsiteStatus("已勾选「启用代理」，但 设置 → 代理服务器 中尚未配置代理", "#F87171");
+                AddLog("Website: proxy enabled but not configured.");
+                return;
+            }
             if (!proxyText.Contains("://", StringComparison.Ordinal)) proxyText = "http://" + proxyText;
             if (!Uri.TryCreate(proxyText, UriKind.Absolute, out proxy) || proxy.Scheme != "http" || proxy.Host.Length == 0)
             {

@@ -19,7 +19,7 @@ public static class Loc
         ["nav.monitor"]   = ("Monitor",          "持续监测"),
         ["nav.tools"]     = ("Tools",            "工具箱"),
         ["nav.routemon"]  = ("Route Monitor",    "路由监控"),
-        ["web.proxy.tip"] = ("Tip: to test a blocked site, set a proxy in Settings → Proxy Server first.", "提示：测被墙网站前，请先在 设置 → 代理服务器 中配置代理。"),
+        ["web.proxy.tip"] = ("Tip: to test a blocked site, tick 「启用代理」 above (proxy from Settings → Proxy Server); unticked = direct.", "提示：测被墙网站时勾选上方「启用代理」（代理来自 设置 → 代理服务器）；不勾选则直连。"),
         ["nav.ping"]      = ("Pingularity",      "Pingularity"),
         ["nav.history"]   = ("History",          "历史记录"),
         ["nav.settings"]  = ("Settings",         "设置"),

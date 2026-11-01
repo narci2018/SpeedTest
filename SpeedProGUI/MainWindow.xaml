@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.12.0 — Network Performance Suite"
+        Title="SpeedPro v3.12.1 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -104,7 +104,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.12.0 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.12.1 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1090,7 +1090,7 @@
                       <Grid.ColumnDefinitions><ColumnDefinition Width="84"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                       <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/><RowDefinition Height="24"/><RowDefinition Height="24"/>
-                        <RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/>
+                        <RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="24"/><RowDefinition Height="Auto"/>
                       </Grid.RowDefinitions>
                       <TextBlock Grid.Row="0" Grid.Column="0" Text="Final URL" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Top" Margin="0,2,0,0"/>
                       <TextBlock Grid.Row="0" Grid.Column="1" x:Name="WebInfoUrl" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
@@ -1107,6 +1107,9 @@
                       <TextBlock Grid.Row="5" Grid.Column="1" x:Name="WebInfoSize" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
                       <TextBlock Grid.Row="6" Grid.Column="0" Text="Redirects" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
                       <TextBlock Grid.Row="6" Grid.Column="1" x:Name="WebInfoRedirects" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="7" Grid.Column="0" Text="Link BW*" FontSize="10" Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}" VerticalAlignment="Top" Margin="0,2,0,0"
+                                 ToolTip="链路带宽参考：3 并发连接对 Cloudflare 边缘下载 4 秒（与被测网站无关）"/>
+                      <TextBlock Grid.Row="7" Grid.Column="1" x:Name="WebInfoLinkBw" Text="--" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}" TextWrapping="Wrap"/>
                     </Grid>
                   </StackPanel>
                 </Border>
@@ -1660,7 +1663,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.12.0</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.12.1</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

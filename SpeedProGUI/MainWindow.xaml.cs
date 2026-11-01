@@ -1543,22 +1543,22 @@ public partial class MainWindow : Window
                 if (results.Average(r => r.BodyBytes) < 4096)
                     WebsiteSpeedMbps.Text += "（页面过小，速度仅供参考）";
 
-                // ── 带宽探测：3 并发连接对 Cloudflare 边缘下载 4 秒 ──
+                // ── 带宽探测：8 并发连接对 Cloudflare 边缘下载 4 秒 ──
+                // 结果是「本机链路带宽参考」，与被测网站无关，写入 RESPONSE INFO 参考行
                 if (WebsiteBandwidthCheck.IsChecked == true)
                 {
-                    SetWebsiteStatus("Bandwidth probe · 3 connections × 4 s · Cloudflare edge …", "#FBBF24");
+                    SetWebsiteStatus("Bandwidth probe · 8 connections × 4 s · Cloudflare edge …", "#FBBF24");
                     var (mbps, bytes, secs) = await WebsiteProbe.MeasureDownloadAsync(
                         new Uri("https://speed.cloudflare.com/__down?bytes=33554432"), 8, 4, proxy, CancellationToken.None);
-                    WebsiteSpeed.Text = mbps.ToString("F1") + " Mbps";
-                    WebsiteSpeedLabel.Text = "Bandwidth (8-conn · CF edge)";
-                    WebsiteSpeedMbps.Text = "≈ " + mbps.ToString("F1") + " Mbps";
+                    WebInfoLinkBw.Text = mbps.ToString("F1") + " Mbps (8-conn · CF edge" +
+                                         (proxy != null ? ", via proxy" : "") + ")";
                     WebsiteLogBox.AppendText(
                         $"[bandwidth] {FormatBytes(bytes)} in {secs:F1} s → {mbps:F1} Mbps (8-conn, Cloudflare edge" +
                         (proxy != null ? $", via proxy {proxy.Authority}" : "") + ")\r\n");
                     WebsiteLogBox.ScrollToEnd();
                     SetWebsiteStatus("Complete · " + samples + " samples + bandwidth probe" + viaText +
                                      " · " + results[^1].FinalUrl, "#4ADE80");
-                    AddLog($"Website test done: {startUri} — TTFB {avgTtfb:F1} ms; bandwidth {mbps:F1} Mbps ({FormatBytes(bytes)} in {secs:F1}s)");
+                    AddLog($"Website test done: {startUri} — TTFB {avgTtfb:F1} ms; link bandwidth {mbps:F1} Mbps ({FormatBytes(bytes)} in {secs:F1}s)");
                 }
                 else
                 {
@@ -1684,7 +1684,7 @@ public partial class MainWindow : Window
             el.Text = "--";
         foreach (var b in new[] { WebBarDns, WebBarTcp, WebBarTls, WebBarTtfb, WebBarContent })
             b.Width = 0;
-        foreach (var el in new[] { WebInfoUrl, WebInfoStatus, WebInfoIp, WebInfoServer, WebInfoType, WebInfoSize, WebInfoRedirects })
+        foreach (var el in new[] { WebInfoUrl, WebInfoStatus, WebInfoIp, WebInfoServer, WebInfoType, WebInfoSize, WebInfoRedirects, WebInfoLinkBw })
             el.Text = "--";
     }
 

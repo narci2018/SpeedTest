@@ -24,6 +24,7 @@
   <Geometry x:Key="IcoDownload">M10,3 L10,13 M10,13 L5.5,8.5 M10,13 L14.5,8.5 M3.5,16.5 L16.5,16.5</Geometry>
   <Geometry x:Key="IcoUpload">M10,17 L10,7 M10,7 L5.5,11.5 M10,7 L14.5,11.5 M3.5,3.5 L16.5,3.5</Geometry>
   <Geometry x:Key="IcoMonitor">M2,10 L6.2,10 L8.2,4.5 L11.8,15.5 L13.8,10 L18,10</Geometry>
+  <Geometry x:Key="IcoTools">M3,5.5 L17,5.5 M3,10 L13,10 M3,14.5 L9.5,14.5 M15.5,12.5 L18,15 L14.5,18.5 L12,16</Geometry>
   <Geometry x:Key="IcoClose">M0,0 L10,10 M10,0 L0,10</Geometry>
   <Geometry x:Key="IcoMin">M0,0 L10,0</Geometry>
   <Geometry x:Key="IcoMax">M0,0 L10,0 L10,10 L0,10 Z</Geometry>

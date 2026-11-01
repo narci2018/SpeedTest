@@ -29,11 +29,12 @@ using Clipboard = System.Windows.Clipboard;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using Size = System.Windows.Size;
 using Application = System.Windows.Application;
+using FontFamily = System.Windows.Media.FontFamily;
 
 namespace SpeedPro;
 
 public enum EngineType { SpeedTestGo, LibreSpeed }
-public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, History, Settings }
+public enum NavPage { Test, Website, Monitor, Iperf3, Ethr, Pingularity, Tools, History, Settings }
 
 public record HistoryEntry(
     string Time, string Engine, double Download, double Upload,
@@ -84,6 +85,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // 中文 Windows 上 tracert 输出为 GBK——注册代码页编码提供程序以正确解码
+        try { System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance); } catch { }
         HistoryGrid.ItemsSource = _history;
         NativeMethods.SetProcessDPIAware();
 
@@ -122,6 +125,7 @@ public partial class MainWindow : Window
             {
                 "website"  => "website",
                 "monitor"  => "monitor",
+                "tools"    => "tools",
                 "iperf3"   => "iperf3",
                 "ethr"     => "ethr",
                 "ping"     => "pingularity",
@@ -132,6 +136,7 @@ public partial class MainWindow : Window
             _currentPage = tag switch
             {
                 "website" => NavPage.Website, "monitor" => NavPage.Monitor,
+                "tools" => NavPage.Tools,
                 "iperf3" => NavPage.Iperf3, "ethr" => NavPage.Ethr,
                 "pingularity" => NavPage.Pingularity,
                 "history" => NavPage.History, "settings" => NavPage.Settings, _ => NavPage.Test
@@ -210,6 +215,7 @@ public partial class MainWindow : Window
         { nameof(NavEthr),    "ethr" },
         { nameof(NavWebsite), "website" },
         { nameof(NavMonitor), "monitor" },
+        { nameof(NavTools),   "tools" },
         { nameof(NavPing),    "pingularity" },
         { nameof(NavHistory), "history" },
         { nameof(NavSettings),"settings" },
@@ -227,6 +233,7 @@ public partial class MainWindow : Window
             "iperf3"     => NavPage.Iperf3,
             "ethr"       => NavPage.Ethr,
             "pingularity"=> NavPage.Pingularity,
+            "tools"      => NavPage.Tools,
             "history"    => NavPage.History,
             "settings"   => NavPage.Settings,
             _            => _currentPage
@@ -240,6 +247,7 @@ public partial class MainWindow : Window
         NavTest.IsChecked     = tag == "test";
         NavWebsite.IsChecked  = tag == "website";
         NavMonitor.IsChecked  = tag == "monitor";
+        NavTools.IsChecked    = tag == "tools";
         NavIperf3.IsChecked   = tag == "iperf3";
         NavEthr.IsChecked     = tag == "ethr";
         NavPing.IsChecked     = tag == "pingularity";
@@ -252,6 +260,7 @@ public partial class MainWindow : Window
         PanelTest.Visibility         = page == NavPage.Test          ? Visibility.Visible : Visibility.Collapsed;
         PanelWebsite.Visibility      = page == NavPage.Website       ? Visibility.Visible : Visibility.Collapsed;
         PanelMonitor.Visibility      = page == NavPage.Monitor       ? Visibility.Visible : Visibility.Collapsed;
+        PanelTools.Visibility        = page == NavPage.Tools         ? Visibility.Visible : Visibility.Collapsed;
         PanelIperf3.Visibility       = page == NavPage.Iperf3        ? Visibility.Visible : Visibility.Collapsed;
         PanelEthr.Visibility         = page == NavPage.Ethr          ? Visibility.Visible : Visibility.Collapsed;
         PanelPingularity.Visibility  = page == NavPage.Pingularity   ? Visibility.Visible : Visibility.Collapsed;
@@ -265,6 +274,7 @@ public partial class MainWindow : Window
         {
             NavPage.Website    => Loc.Get("title.website"),
             NavPage.Monitor    => Loc.Get("title.monitor"),
+            NavPage.Tools      => Loc.Get("title.tools"),
             NavPage.Iperf3     => Loc.Get("title.iperf3"),
             NavPage.Ethr       => Loc.Get("title.ethr"),
             NavPage.Pingularity=> Loc.Get("title.ping"),
@@ -1048,7 +1058,10 @@ public partial class MainWindow : Window
                     SettingProxy.Text = p.GetString() ?? "";
                 if (doc.RootElement.TryGetProperty("tray", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.True)
                     SetTrayCheck.IsChecked = true;
+                if (doc.RootElement.TryGetProperty("autoTheme", out var at) && at.ValueKind == System.Text.Json.JsonValueKind.True)
+                    SetAutoThemeCheck.IsChecked = true;
                 _loadingConfig = false;
+                if (SetAutoThemeCheck.IsChecked == true) ApplySystemTheme();
             }
             // 开机自启的真相来源是注册表
             SetAutoStartCheck.IsChecked = global::Microsoft.Win32.Registry.CurrentUser
@@ -2130,6 +2143,279 @@ public partial class MainWindow : Window
 
     private void PingularityClearLog_Click(object? sender, RoutedEventArgs e) => PingularityLogBox.Text = "";
 
+    // ── Network Tools: traceroute + DNS benchmark ───────────────────────────
+    private bool _traceRunning;
+    private Process? _traceProc;
+    private readonly List<(int hop, double? bestMs, string ep)> _traceHops = new();
+    private bool _dnsRunning;
+    private readonly ObservableCollection<DnsRow> _dnsRows = new();
+
+    private sealed record DnsRow(string Server, string Best, string Avg, string Result);
+
+    private static readonly (string Name, string Ip)[] DnsServers =
+    {
+        ("AliDNS 223.5.5.5", "223.5.5.5"),
+        ("DNSPod 119.29.29.29", "119.29.29.29"),
+        ("114DNS 114.114.114.114", "114.114.114.114"),
+        ("Baidu 180.76.76.76", "180.76.76.76"),
+        ("Google 8.8.8.8", "8.8.8.8"),
+        ("Cloudflare 1.1.1.1", "1.1.1.1"),
+    };
+
+    private void SetTraceStatus(string text, string color)
+    {
+        TraceStatus.Text = text;
+        TraceStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    /// <summary>Parses one tracert line: hop number, best latency (any locale unit), endpoint.</summary>
+    private static (int hop, double? bestMs, string ep)? ParseTracertLine(string line)
+    {
+        var tok = line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (tok.Length < 2 || !int.TryParse(tok[0], out var hop) || hop <= 0) return null;
+        var lat = new List<double>();
+        string? endpoint = null;
+        for (int i = 1; i < tok.Length; i++)
+        {
+            string t = tok[i];
+            if (t == "*") continue;
+            string num = t.StartsWith("<") ? t[1..] : t;
+            bool numeric = num.Length > 0 && num.All(char.IsDigit);
+            if (numeric && i + 1 < tok.Length && tok[i + 1] != "*")
+            {
+                // 数字 + 单位 token（ms / 毫秒 / 任何非数字词）
+                if (double.TryParse(num, out var v)) { lat.Add(v); i++; continue; }
+            }
+            if (t.All(c => c < 128) && (t.Contains('.') || t.Contains(':')) && !double.TryParse(t, out _))
+                endpoint = t;
+        }
+        if (endpoint == null && lat.Count == 0) return null;
+        return (hop, lat.Count > 0 ? lat.Min() : (double?)null, endpoint ?? "timeout");
+    }
+
+    private void DrawTracerouteRows()
+    {
+        var canvas = TracerouteCanvas;
+        if (canvas == null) return;
+        canvas.Children.Clear();
+        double w = canvas.ActualWidth; if (w < 10) w = 600;
+        double rowH = 22;
+        canvas.Height = Math.Max(240, _traceHops.Count * rowH + 8);
+        var withLat = _traceHops.Where(h => h.bestMs != null).ToList();
+        double maxLat = withLat.Count > 0 ? withLat.Max(h => h.bestMs!.Value) : 1;
+        double barX = w * 0.42, barMax = w * 0.40;
+        for (int i = 0; i < _traceHops.Count; i++)
+        {
+            var (hop, ms, ep) = _traceHops[i];
+            double y = i * rowH + 3;
+            var label = new TextBlock
+            {
+                Text = $"{hop,2}  {ep}",
+                FontSize = 11,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#8A90A8")!,
+                FontFamily = (FontFamily)FindResource("MonoFont")
+            };
+            canvas.Children.Add(label);
+            Canvas.SetLeft(label, 8); Canvas.SetTop(label, y);
+            if (ms != null)
+            {
+                double latency = ms.Value;
+                string color = latency < 50 ? "#4ADE80" : latency < 150 ? "#FBBF24" : "#F87171";
+                var bar = new System.Windows.Shapes.Rectangle
+                {
+                    Height = 8, RadiusX = 4, RadiusY = 4,
+                    Width = Math.Max(6, latency / maxLat * barMax),
+                    Fill = (Brush)new BrushConverter().ConvertFrom(color)!
+                };
+                canvas.Children.Add(bar);
+                Canvas.SetLeft(bar, barX); Canvas.SetTop(bar, y + 4);
+                var val = new TextBlock
+                {
+                    Text = latency.ToString("F1") + " ms", FontSize = 10.5,
+                    Foreground = (Brush)new BrushConverter().ConvertFrom("#8A90A8")!
+                };
+                canvas.Children.Add(val);
+                Canvas.SetLeft(val, barX + bar.Width + 8); Canvas.SetTop(val, y + 1);
+            }
+            else
+            {
+                var t = new TextBlock
+                {
+                    Text = "timeout / no response", FontSize = 10.5,
+                    Foreground = (Brush)new BrushConverter().ConvertFrom("#F87171")!
+                };
+                canvas.Children.Add(t);
+                Canvas.SetLeft(t, barX); Canvas.SetTop(t, y + 1);
+            }
+        }
+    }
+
+    private async void TraceBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_traceRunning)
+        {
+            try { _traceProc?.Kill(); } catch { }
+            return;
+        }
+        string host = TracerouteHost.Text.Trim();
+        if (host.Length == 0) { SetTraceStatus("Please enter a host.", "#F87171"); return; }
+
+        _traceRunning = true;
+        TraceBtn.Content = "Stop";
+        _traceHops.Clear();
+        TracerouteCanvas.Children.Clear();
+        SetTraceStatus($"Tracing route to {host} … (max 30 hops)", "#FBBF24");
+        try
+        {
+            var psi = new ProcessStartInfo("tracert", $"-d {host}")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            try { psi.StandardOutputEncoding = Encoding.GetEncoding(936); } catch { }
+            _traceProc = Process.Start(psi)!;
+            string? line;
+            while ((line = await _traceProc.StandardOutput.ReadLineAsync()) != null)
+            {
+                if (line.Trim().Length == 0) continue;
+                ToolsLogBox.AppendText(line + "\r\n");
+                ToolsLogBox.ScrollToEnd();
+                var hop = ParseTracertLine(line);
+                if (hop != null && hop.Value.hop > 0)
+                {
+                    _traceHops.Add(hop.Value);
+                    DrawTracerouteRows();
+                }
+            }
+            await _traceProc.WaitForExitAsync();
+            SetTraceStatus($"Done · {_traceHops.Count} hops recorded", "#4ADE80");
+            AddLog($"Traceroute done: {host} — {_traceHops.Count} hops");
+        }
+        catch (Exception ex)
+        {
+            SetTraceStatus("Failed: " + ex.Message, "#F87171");
+            AddLog("Traceroute failed: " + ex.Message);
+        }
+        finally
+        {
+            _traceRunning = false;
+            TraceBtn.Content = "Trace";
+        }
+    }
+
+    // ── DNS benchmark: raw UDP A-queries ────────────────────────────────────
+    private static async Task<double> DnsQueryMsAsync(string server, string domain, CancellationToken ct)
+    {
+        ushort id = (ushort)Random.Shared.Next(1, ushort.MaxValue);
+        var pkt = new System.IO.MemoryStream();
+        pkt.Write(new byte[] { (byte)(id >> 8), (byte)id, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
+        foreach (var label in domain.TrimEnd('.').Split('.'))
+        {
+            if (label.Length == 0) continue;
+            pkt.WriteByte((byte)label.Length);
+            pkt.Write(Encoding.ASCII.GetBytes(label));
+        }
+        pkt.Write(new byte[] { 0, 1, 0, 1 });   // type A, class IN
+
+        using var udp = new UdpClient(server, 53);
+        var sw = Stopwatch.StartNew();
+        await udp.SendAsync(pkt.ToArray(), (int)pkt.Length).WaitAsync(TimeSpan.FromSeconds(2), ct);
+        var res = await udp.ReceiveAsync(ct).AsTask().WaitAsync(TimeSpan.FromSeconds(3), ct);
+        sw.Stop();
+        if (res.Buffer.Length < 12 || res.Buffer[0] != (byte)(id >> 8) || res.Buffer[1] != (byte)id)
+            throw new Exception("unexpected DNS response");
+        return sw.Elapsed.TotalMilliseconds;
+    }
+
+    private async void DnsRunBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dnsRunning) return;
+        string domain = DnsDomain.Text.Trim();
+        if (domain.Length == 0) { SetDnsStatus("Please enter a domain.", "#F87171"); return; }
+        _dnsRunning = true;
+        DnsRunBtn.IsEnabled = false;
+        _dnsRows.Clear();
+        DnsGrid.ItemsSource = _dnsRows;
+        try
+        {
+            for (int s = 0; s < DnsServers.Length; s++)
+            {
+                var (name, ip) = DnsServers[s];
+                SetDnsStatus($"Querying {name} …", "#FBBF24");
+                var times = new List<double>();
+                int fails = 0;
+                for (int i = 0; i < 3; i++)
+                {
+                    try { times.Add(await DnsQueryMsAsync(ip, domain, CancellationToken.None)); }
+                    catch { fails++; }
+                }
+                var row = times.Count > 0
+                    ? new DnsRow(name, times.Min().ToString("F1") + " ms",
+                        times.Average().ToString("F1") + " ms", $"OK ({times.Count}/3)")
+                    : new DnsRow(name, "-", "-", "Timeout");
+                _dnsRows.Add(row);
+                ToolsLogBox.AppendText($"[dns] {name} → best {row.Best} / avg {row.Avg} ({row.Result})\r\n");
+                ToolsLogBox.ScrollToEnd();
+                SetDnsStatus($"Done {s + 1}/{DnsServers.Length} servers", "#FBBF24");
+            }
+            var reachable = _dnsRows.Count(r => r.Result.StartsWith("OK"));
+            SetDnsStatus($"Complete · {reachable}/{DnsServers.Length} servers reachable", reachable > 0 ? "#4ADE80" : "#F87171");
+            AddLog($"DNS benchmark done for {domain}: {reachable}/{DnsServers.Length} reachable");
+        }
+        finally
+        {
+            _dnsRunning = false;
+            DnsRunBtn.IsEnabled = true;
+        }
+    }
+
+    private void SetDnsStatus(string text, string color)
+    {
+        DnsStatus.Text = text;
+        DnsStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    // ── Theme follows system ────────────────────────────────────────────────
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = System.Windows.Interop.HwndSource.FromHwnd(
+            new System.Windows.Interop.WindowInteropHelper(this).Handle);
+        hwnd?.AddHook(HwndHook);
+    }
+
+    private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_SETTINGCHANGE = 0x001A;
+        if (msg == WM_SETTINGCHANGE && lParam != IntPtr.Zero &&
+            Marshal.PtrToStringUni(lParam) == "ImmersiveColorSet" &&
+            SetAutoThemeCheck?.IsChecked == true)
+        {
+            ApplySystemTheme();
+        }
+        return IntPtr.Zero;
+    }
+
+    private void ApplySystemTheme()
+    {
+        try
+        {
+            var v = global::Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                ?.GetValue("AppsUseLightTheme");
+            bool light = v is int i && i == 1;
+            SetTheme(light ? "ClassicLight" : "DarkTech");
+        }
+        catch { }
+    }
+
+    private void AutoTheme_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig) return;
+        SaveConfig();
+        if (SetAutoThemeCheck.IsChecked == true) ApplySystemTheme();
+    }
+
     // ── History ─────────────────────────────────────────────────────────────
     private void HistoryFilter_Changed(object? sender, SelectionChangedEventArgs e)
     {
@@ -2217,6 +2503,7 @@ public partial class MainWindow : Window
         NavEthr.Content     = Loc.Get("nav.ethr");
         NavWebsite.Content  = Loc.Get("nav.website");
         NavMonitor.Content  = Loc.Get("nav.monitor");
+        NavTools.Content    = Loc.Get("nav.tools");
         NavPing.Content     = Loc.Get("nav.ping");
         NavHistory.Content  = Loc.Get("nav.history");
         NavSettings.Content = Loc.Get("nav.settings");

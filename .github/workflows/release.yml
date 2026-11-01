@@ -55,13 +55,62 @@ jobs:
           path: SpeedPro-*.zip
           if-no-files-found: error
 
-      - name: Create GitHub Release (tag pushes only)
-        if: startsWith(github.ref, 'refs/tags/')
+  # 自包含单文件构建（免装 .NET Runtime，体积更大）
+  build-sc:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+        fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained single-file (${{ matrix.rid }})
+        run: dotnet publish SpeedProGUI/SpeedPro.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o out-sc/${{ matrix.rid }}
+
+      - name: Bundle engines
+        shell: pwsh
+        run: |
+          Copy-Item engines/x64/* out-sc/${{ matrix.rid }}/ -Force
+          if (Test-Path "engines/${{ matrix.rid }}") { Copy-Item engines/${{ matrix.rid }}/* out-sc/${{ matrix.rid }}/ -Force }
+          Get-ChildItem out-sc/${{ matrix.rid }} | Select-Object Name, Length
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Compress-Archive -Path "out-sc/${{ matrix.rid }}/*" -DestinationPath "SpeedPro-$tag-${{ matrix.rid }}-sc.zip" -Force
+          Get-ChildItem *.zip | Select-Object Name, Length
+
+      - name: Upload build artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeedPro-${{ github.ref_name }}-${{ matrix.rid }}-sc
+          path: SpeedPro-*.zip
+          if-no-files-found: error
+
+  # 集中发布：收集所有产物，一次创建 Release
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, build-sc]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: zips
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            SpeedPro-*-win-x64.zip
-            SpeedPro-*-win-arm64.zip
+          files: zips/*.zip
           generate_release_notes: true
           body: |
             ## SpeedPro ${{ github.ref_name }}
@@ -70,11 +119,13 @@ jobs:
             |---|---|---|
             | `SpeedPro-${{ github.ref_name }}-win-x64.zip` | x64 | .NET 8 Desktop Runtime |
             | `SpeedPro-${{ github.ref_name }}-win-arm64.zip` | ARM64 | .NET 8 Desktop Runtime |
+            | `SpeedPro-${{ github.ref_name }}-win-x64-sc.zip` | x64 | 无需安装运行时 |
+            | `SpeedPro-${{ github.ref_name }}-win-arm64-sc.zip` | ARM64 | 无需安装运行时 |
 
             **安装与运行**
-            1. 安装 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（对应架构）。
+            1. `-sc.zip` 为自包含单文件版，解压即用；普通 zip 需先安装 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（对应架构）。
             2. 解压即用——五个测速引擎（speedtest-go / librespeed-cli / ethr / iperf3+cygwin1.dll / pingularity）已内置。
                ARM64 包中的 ethr、iperf3、pingularity 为 x64 构建，Windows 11 ARM64 通过 x64 模拟运行。
             3. 如需测试被墙网站，先在 设置 → 代理服务器 配置本地代理。
 
-            > 由 GitHub Actions 自动构建：`dotnet publish -c Release`（框架依赖，非自包含）。
+            > 由 GitHub Actions 自动构建：`dotnet publish -c Release`。

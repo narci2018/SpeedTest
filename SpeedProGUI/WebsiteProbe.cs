@@ -21,6 +21,137 @@ public sealed record WebSample(
 public static class WebsiteProbe
 {
     /// <summary>
+    /// Builds a connected (and TLS-wrapped for https) stream to the target,
+    /// optionally through an HTTP proxy CONNECT tunnel. Returns the stream and
+    /// the DNS/TCP/TLS stage timings.
+    /// </summary>
+    public static async Task<(Stream stream, string ip, double dnsMs, double tcpMs, double tlsMs)>
+        ConnectStreamAsync(Uri uri, Uri? proxy, CancellationToken ct)
+    {
+        // ── DNS: target (direct) or proxy host ──
+        string connectHost = proxy?.Host ?? uri.Host;
+        int connectPort = proxy?.Port ?? uri.Port;
+        var sw = Stopwatch.StartNew();
+        IPAddress[] addrs;
+        try { addrs = await Dns.GetHostAddressesAsync(connectHost).WaitAsync(TimeSpan.FromSeconds(6), ct); }
+        catch (TimeoutException) { throw new Exception("DNS lookup timed out (>6s): " + connectHost); }
+        if (addrs.Length == 0) throw new Exception("DNS found no address for " + connectHost);
+        var ipAddr = addrs.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addrs[0];
+        string ip = ipAddr.ToString();
+        double dnsMs = Math.Max(0.05, sw.Elapsed.TotalMilliseconds);
+
+        // ── TCP: to target (direct) or to proxy ──
+        var socket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        Stream? stream = null;
+        SslStream? ssl = null;
+        double tcpMs, tlsMs = 0;
+        try
+        {
+            sw.Restart();
+            try { await socket.ConnectAsync(new IPEndPoint(ipAddr, connectPort), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(8), ct); }
+            catch (TimeoutException) { throw new Exception($"TCP connect timed out (>8s): {connectHost}:{connectPort}"); }
+            catch (SocketException se) { throw new Exception($"TCP connect failed: {se.SocketErrorCode} → {connectHost}:{connectPort}"); }
+            tcpMs = sw.Elapsed.TotalMilliseconds;
+            stream = new NetworkStream(socket, ownsSocket: true);
+
+            // ── Proxy tunnel: CONNECT target authority ──
+            if (proxy != null)
+            {
+                string authority = uri.Host + ":" + uri.Port;   // always include port (curl-compatible)
+                string connectReq = $"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: keep-alive\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(connectReq), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
+                string resp = await ReadProxyConnectResponseAsync(stream, ct);
+                var cm = System.Text.RegularExpressions.Regex.Match(resp, @"HTTP/\d(?:\.\d)?\s+(\d{3})");
+                if (!cm.Success || cm.Groups[1].Value != "200")
+                    throw new Exception("Proxy CONNECT failed: " + resp.Split("\r\n")[0]);
+            }
+
+            if (uri.Scheme == "https")
+            {
+                sw.Restart();
+                ssl = new SslStream(stream);
+                try
+                {
+                    await ssl.AuthenticateAsClientAsync(
+                            new SslClientAuthenticationOptions { TargetHost = uri.Host }, CancellationToken.None)
+                        .WaitAsync(TimeSpan.FromSeconds(8), ct);
+                }
+                catch (TimeoutException) { throw new Exception("TLS handshake timed out (>8s): " + uri.Host); }
+                catch (System.Security.Authentication.AuthenticationException aex)
+                { throw new Exception("TLS certificate error for " + uri.Host + ": " + aex.Message); }
+                catch (Exception ex) when (ex is IOException or SocketException)
+                {
+                    throw new Exception(
+                        $"TLS handshake was forcibly reset for {uri.Host} — TCP connected fine, so the domain is likely blocked by your network (SNI reset) or refused by the edge. Try opening the site in a browser to confirm. If you have a proxy (Clash/v2rayN/…), set it in Settings → Proxy Server and retry. [{ex.InnerException?.Message ?? ex.Message}]");
+                }
+                tlsMs = sw.Elapsed.TotalMilliseconds;
+                stream = ssl;
+            }
+            return (stream, ip, dnsMs, tcpMs, tlsMs);
+        }
+        catch
+        {
+            try { stream?.Dispose(); } catch { }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Bandwidth probe: opens `connections` parallel downloads of a large object
+    /// and counts wire bytes for `seconds` seconds (headers excluded).
+    /// Returns aggregated throughput in Mbps and total bytes pulled.
+    /// </summary>
+    public static async Task<(double Mbps, long TotalBytes, double Seconds)> MeasureDownloadAsync(
+        Uri url, int connections, int seconds, Uri? proxy, CancellationToken ct)
+    {
+        long total = 0;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(seconds));
+        var start = Stopwatch.StartNew();
+        await Task.WhenAll(Enumerable.Range(0, connections).Select(async _ =>
+        {
+            try
+            {
+                var (stream, _, _, _, _) = await ConnectStreamAsync(url, proxy, cts.Token);
+                using (stream)
+                {
+                    string hostHeader = url.IsDefaultPort ? url.Host : url.Authority;
+                    string req = $"GET {url.PathAndQuery} HTTP/1.1\r\nHost: {hostHeader}\r\n" +
+                                 "User-Agent: SpeedPro-BandwidthProbe/3.12\r\nAccept: */*\r\nConnection: close\r\n\r\n";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(req), cts.Token);
+                    // 读掉响应头
+                    var hdr = new MemoryStream();
+                    var buf = new byte[65536];
+                    int hn;
+                    while ((hn = await stream.ReadAsync(buf, cts.Token)) > 0)
+                    {
+                        hdr.Write(buf, 0, hn);
+                        var all = hdr.GetBuffer(); int len = (int)hdr.Length;
+                        bool done = false;
+                        for (int k = Math.Max(0, len - hn - 3); k <= len - 4; k++)
+                            if (all[k] == 13 && all[k + 1] == 10 && all[k + 2] == 13 && all[k + 3] == 10)
+                            { done = true; break; }
+                        if (done) break;
+                    }
+                    // 流式计数正文，直到时间窗关闭
+                    while (true)
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        int n = await stream.ReadAsync(buf, cts.Token);
+                        if (n <= 0) break;
+                        Interlocked.Add(ref total, n);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { /* 时间窗关闭 — 正常结束 */ }
+            catch { /* 单连接失败不影响整体 */ }
+        }));
+        cts.Dispose();
+        double secs = Math.Max(0.2, start.Elapsed.TotalSeconds);
+        return (total * 8 / secs / 1e6, total, secs);
+    }
+
+    /// <summary>
     /// Runs one polite single-connection GET: DNS → TCP → (proxy CONNECT) → TLS → TTFB → body,
     /// following up to 5 redirects (http→https etc.). Connection: close; 25 MB cap.
     /// When a proxy is set, DNS/TCP target the proxy and a CONNECT tunnel carries the TLS.
@@ -31,66 +162,10 @@ public static class WebsiteProbe
         int redirects = 0;
         while (true)
         {
-            // ── DNS: target (direct) or proxy host ──
-            string connectHost = proxy?.Host ?? uri.Host;
-            int connectPort = proxy?.Port ?? uri.Port;
-            var sw = Stopwatch.StartNew();
-            IPAddress[] addrs;
-            try { addrs = await Dns.GetHostAddressesAsync(connectHost).WaitAsync(TimeSpan.FromSeconds(6), ct); }
-            catch (TimeoutException) { throw new Exception("DNS lookup timed out (>6s): " + connectHost); }
-            if (addrs.Length == 0) throw new Exception("DNS found no address for " + connectHost);
-            var ipAddr = addrs.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addrs[0];
-            string ip = ipAddr.ToString();
-            double dnsMs = Math.Max(0.05, sw.Elapsed.TotalMilliseconds);
-
-            // ── TCP: to target (direct) or to proxy ──
-            var socket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            Stream? stream = null;
-            SslStream? ssl = null;
-            double tcpMs, tlsMs = 0;
+            var (stream, ip, dnsMs, tcpMs, tlsMs) = await ConnectStreamAsync(uri, proxy, ct);
+            SslStream? ssl = stream as SslStream;
             try
             {
-                sw.Restart();
-                try { await socket.ConnectAsync(new IPEndPoint(ipAddr, connectPort), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(8), ct); }
-                catch (TimeoutException) { throw new Exception($"TCP connect timed out (>8s): {connectHost}:{connectPort}"); }
-                catch (SocketException se) { throw new Exception($"TCP connect failed: {se.SocketErrorCode} → {connectHost}:{connectPort}"); }
-                tcpMs = sw.Elapsed.TotalMilliseconds;
-                stream = new NetworkStream(socket, ownsSocket: true);
-
-                // ── Proxy tunnel: CONNECT target authority ──
-                if (proxy != null)
-                {
-                    string authority = uri.Host + ":" + uri.Port;   // always include port (curl-compatible)
-                    string connectReq = $"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: keep-alive\r\n\r\n";
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes(connectReq), CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10), ct);
-                    string resp = await ReadProxyConnectResponseAsync(stream, ct);
-                    var cm = System.Text.RegularExpressions.Regex.Match(resp, @"HTTP/\d(?:\.\d)?\s+(\d{3})");
-                    if (!cm.Success || cm.Groups[1].Value != "200")
-                        throw new Exception("Proxy CONNECT failed: " + resp.Split("\r\n")[0]);
-                }
-
-                if (uri.Scheme == "https")
-                {
-                    sw.Restart();
-                    ssl = new SslStream(stream);
-                    try
-                    {
-                        await ssl.AuthenticateAsClientAsync(
-                                new SslClientAuthenticationOptions { TargetHost = uri.Host }, CancellationToken.None)
-                            .WaitAsync(TimeSpan.FromSeconds(8), ct);
-                    }
-                    catch (TimeoutException) { throw new Exception("TLS handshake timed out (>8s): " + uri.Host); }
-                    catch (System.Security.Authentication.AuthenticationException aex)
-                    { throw new Exception("TLS certificate error for " + uri.Host + ": " + aex.Message); }
-                    catch (Exception ex) when (ex is IOException or SocketException)
-                    {
-                        throw new Exception(
-                            $"TLS handshake was forcibly reset for {uri.Host} — TCP connected fine, so the domain is likely blocked by your network (SNI reset) or refused by the edge. Try opening the site in a browser to confirm. If you have a proxy (Clash/v2rayN/…), set it in Settings → Proxy Server and retry. [{ex.InnerException?.Message ?? ex.Message}]");
-                    }
-                    tlsMs = sw.Elapsed.TotalMilliseconds;
-                    stream = ssl;
-                }
-
                 // ── HTTP GET (Connection: close → read to EOF) ──
                 string hostHeader = uri.IsDefaultPort ? uri.Host : uri.Authority;
                 string req = $"GET {uri.PathAndQuery} HTTP/1.1\r\n" +

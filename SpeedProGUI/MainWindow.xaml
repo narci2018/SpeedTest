@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SpeedPro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SpeedPro v3.11.1 — Network Performance Suite"
+        Title="SpeedPro v3.12.0 — Network Performance Suite"
         Width="1520" Height="960"
         MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen"
@@ -104,7 +104,7 @@
         </Border>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="4" Text="v3.11.1 · 5 Engines"
+        <TextBlock Grid.Row="4" Text="v3.12.0 · 5 Engines"
                    FontSize="10" Foreground="{DynamicResource TextDimBrush}"
                    FontFamily="{StaticResource UiFont}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -959,8 +959,12 @@
                     </Grid>
                     <CheckBox x:Name="WebsiteUseProxyCheck" Content="启用代理" FontSize="12"
                               Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"
-                              Margin="0,0,0,8"
+                              Margin="0,0,0,6"
                               ToolTip="选中：使用 设置 → 代理服务器 中配置的代理测试（适合被墙网站）；未选中：直连"/>
+                    <CheckBox x:Name="WebsiteBandwidthCheck" Content="带宽探测（Cloudflare 边缘 · 8 连接 × 4 秒 · 最多约 300 MB 流量）" FontSize="12"
+                              Foreground="{DynamicResource TextMutedBrush}" FontFamily="{StaticResource UiFont}"
+                              IsChecked="True" Margin="0,0,0,8"
+                              ToolTip="网页响应太小测不出下载速度；勾选后测完 TTFB 会并发 3 连接对 Cloudflare 边缘下载 4 秒，得到真实带宽"/>
                     <TextBlock x:Name="WebsiteStatus" Text="Idle" FontSize="11"
                                Foreground="{DynamicResource TextDimBrush}" FontFamily="{StaticResource UiFont}"/>
                     <TextBlock x:Name="WebsiteProxyHint" Text="Tip: to test a blocked site, set a proxy in Settings → Proxy Server first."
@@ -1059,7 +1063,7 @@
                                  Foreground="{DynamicResource SuccessBrush}"
                                  FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center"
                                  TextOptions.TextFormattingMode="Display"/>
-                      <TextBlock Text="Download Speed" FontSize="11"
+                      <TextBlock Text="Download Speed" x:Name="WebsiteSpeedLabel" FontSize="11"
                                  Foreground="{DynamicResource TextDimBrush}"
                                  FontFamily="{StaticResource UiFont}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                       <TextBlock x:Name="WebsiteSpeedMbps" Text="" FontSize="11" FontWeight="SemiBold"
@@ -1124,7 +1128,11 @@
                       Measures the real experience of visiting a website: DNS lookup, TCP connect,
                       TLS handshake, time-to-first-byte (TTFB) and single-connection download speed.<LineBreak/>
                       3 polite sequential requests are made — this reflects the network path and CDN
-                      edge, not the target server's total bandwidth.
+                      edge, not the target server's total bandwidth.<LineBreak/>
+                      Small pages (like Baidu's 227 B response to programmatic clients) cannot measure
+                      download speed — that number comes from the optional bandwidth probe
+                      (8 parallel connections to the Cloudflare edge for 4 s).<LineBreak/>
+                      For full line-rate bandwidth, use the Broadband Test page (multi-threaded Ookla).
                     </TextBlock>
                   </StackPanel>
                 </Border>
@@ -1652,7 +1660,7 @@
                                Foreground="{DynamicResource TextBrush}" FontFamily="{StaticResource UiFont}" Margin="0,0,0,12"/>
                     <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
                                LineHeight="22" FontFamily="{StaticResource UiFont}">
-                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.11.1</Run><LineBreak/>
+                      <Run Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold">SpeedPro v3.12.0</Run><LineBreak/>
                       Professional network performance analysis suite.<LineBreak/>
                       Integrating 5 open-source measurement engines.<LineBreak/><LineBreak/>
                       <Run Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold">Engines:</Run><LineBreak/>

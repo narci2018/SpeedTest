@@ -1537,9 +1537,35 @@ public partial class MainWindow : Window
                 WebsiteSpeed.Text = FormatSpeed(avgSpeed);
                 WebsiteSpeedMbps.Text = "≈ " + (avgSpeed * 8 / 1_000_000.0).ToString("F1") + " Mbps";
                 WebsiteTtfb.Text = avgTtfb.ToString("F1");
-                SetWebsiteStatus("Complete · " + samples + " samples" + viaText +
-                                 " · " + results[^1].FinalUrl, "#4ADE80");
-                AddLog($"Website test done: {startUri} — avg {FormatSpeed(avgSpeed)}, TTFB {avgTtfb:F1} ms");
+
+                // 小页面（如百度对程序 UA 返回的精简页）传输在亚毫秒内完成，
+                // 页面速度只是噪声 —— 标注提醒，真实带宽看探测段
+                if (results.Average(r => r.BodyBytes) < 4096)
+                    WebsiteSpeedMbps.Text += "（页面过小，速度仅供参考）";
+
+                // ── 带宽探测：3 并发连接对 Cloudflare 边缘下载 4 秒 ──
+                if (WebsiteBandwidthCheck.IsChecked == true)
+                {
+                    SetWebsiteStatus("Bandwidth probe · 3 connections × 4 s · Cloudflare edge …", "#FBBF24");
+                    var (mbps, bytes, secs) = await WebsiteProbe.MeasureDownloadAsync(
+                        new Uri("https://speed.cloudflare.com/__down?bytes=33554432"), 8, 4, proxy, CancellationToken.None);
+                    WebsiteSpeed.Text = mbps.ToString("F1") + " Mbps";
+                    WebsiteSpeedLabel.Text = "Bandwidth (8-conn · CF edge)";
+                    WebsiteSpeedMbps.Text = "≈ " + mbps.ToString("F1") + " Mbps";
+                    WebsiteLogBox.AppendText(
+                        $"[bandwidth] {FormatBytes(bytes)} in {secs:F1} s → {mbps:F1} Mbps (8-conn, Cloudflare edge" +
+                        (proxy != null ? $", via proxy {proxy.Authority}" : "") + ")\r\n");
+                    WebsiteLogBox.ScrollToEnd();
+                    SetWebsiteStatus("Complete · " + samples + " samples + bandwidth probe" + viaText +
+                                     " · " + results[^1].FinalUrl, "#4ADE80");
+                    AddLog($"Website test done: {startUri} — TTFB {avgTtfb:F1} ms; bandwidth {mbps:F1} Mbps ({FormatBytes(bytes)} in {secs:F1}s)");
+                }
+                else
+                {
+                    SetWebsiteStatus("Complete · " + samples + " samples" + viaText +
+                                     " · " + results[^1].FinalUrl, "#4ADE80");
+                    AddLog($"Website test done: {startUri} — avg {FormatSpeed(avgSpeed)}, TTFB {avgTtfb:F1} ms");
+                }
             }
             else
             {
@@ -1651,6 +1677,7 @@ public partial class MainWindow : Window
         WebsiteSpeed.Text = "--";
         WebsiteSpeedMbps.Text = "";
         WebsiteTtfb.Text = "--";
+        WebsiteSpeedLabel.Text = "Download Speed";
         BatchCard.Visibility = Visibility.Collapsed;
         _batchRows.Clear();
         foreach (var el in new[] { WebValDns, WebValTcp, WebValTls, WebValTtfb, WebValContent, WebValTotal })

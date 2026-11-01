@@ -6,7 +6,8 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>SpeedPro</AssemblyName>
     <RootNamespace>SpeedPro</RootNamespace>
-    <Version>3.8.0</Version>
+    <Version>3.10.0</Version>
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>

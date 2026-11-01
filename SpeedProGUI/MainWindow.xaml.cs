@@ -1060,6 +1060,18 @@ public partial class MainWindow : Window
                     SetTrayCheck.IsChecked = true;
                 if (doc.RootElement.TryGetProperty("autoTheme", out var at) && at.ValueKind == System.Text.Json.JsonValueKind.True)
                     SetAutoThemeCheck.IsChecked = true;
+                // 恢复窗口位置/尺寸（构造阶段窗口尚未显示，安全）
+                if (doc.RootElement.TryGetProperty("winW", out var wE) &&
+                    doc.RootElement.TryGetProperty("winH", out var hE) &&
+                    doc.RootElement.TryGetProperty("winL", out var lE) &&
+                    doc.RootElement.TryGetProperty("winT", out var tE))
+                {
+                    _ = double.TryParse(wE.ToString(), out _winW);
+                    _ = double.TryParse(hE.ToString(), out _winH);
+                    _ = double.TryParse(lE.ToString(), out _winL);
+                    _ = double.TryParse(tE.ToString(), out _winT);
+                    RestoreWindowBounds();
+                }
                 _loadingConfig = false;
                 if (SetAutoThemeCheck.IsChecked == true) ApplySystemTheme();
             }
@@ -1076,10 +1088,15 @@ public partial class MainWindow : Window
     {
         try
         {
+            RememberWindowBounds();
             global::System.IO.Directory.CreateDirectory(global::System.IO.Path.GetDirectoryName(ConfigPath)!);
             string val = SettingProxy.Text.Trim().Replace("\\", "\\\\").Replace("\"", "\\\"");
             string tray = SetTrayCheck.IsChecked == true ? "true" : "false";
-            global::System.IO.File.WriteAllText(ConfigPath, "{\"proxy\":\"" + val + "\",\"tray\":" + tray + "}");
+            string autoTheme = SetAutoThemeCheck.IsChecked == true ? "true" : "false";
+            global::System.IO.File.WriteAllText(ConfigPath,
+                "{\"proxy\":\"" + val + "\",\"tray\":" + tray + ",\"autoTheme\":" + autoTheme +
+                ",\"winL\":" + _winL.ToString("F0") + ",\"winT\":" + _winT.ToString("F0") +
+                ",\"winW\":" + _winW.ToString("F0") + ",\"winH\":" + _winH.ToString("F0") + "}");
         }
         catch { }
     }
@@ -1211,7 +1228,10 @@ public partial class MainWindow : Window
             Iperf3LogBox.AppendText(json);
             if (!string.IsNullOrWhiteSpace(errors)) Iperf3LogBox.AppendText("[ERR] " + errors);
             SetProgress(100);
-            ParseIperf3Json(json);
+            double throughput = ParseIperf3Json(json);
+            // 点对点吞吐也入历史（历史页过滤器本就有 iperf3 项）
+            SaveHistory("iperf3", throughput, 0, 0, 0, host, udp ? "UDP" : "TCP",
+                host + ":" + port, GetQualityLabel(CalculateScore(throughput, 0, 0, 0)));
             StatusLeft.Text = Loc.Get("status.iperfdone");
             AddLog("Iperf3 test finished");
         }
@@ -1227,8 +1247,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ParseIperf3Json(string json)
+    private double ParseIperf3Json(string json)
     {
+        double throughputMbps = 0;
         try
         {
             using var doc = JsonDocument.Parse(json);
@@ -1237,7 +1258,7 @@ public partial class MainWindow : Window
             if (!end.TryGetProperty("sum_sent", out var sumSent))
                 end.TryGetProperty("sum", out sumSent);
             double throughputBps = sumSent.TryGetProperty("bits_per_second", out var t) ? t.GetDouble() : 0;
-            double throughputMbps = Math.Max(0, throughputBps / 1e6);
+            throughputMbps = Math.Max(0, throughputBps / 1e6);
             double durationSec   = sumSent.TryGetProperty("seconds", out var dur) ? dur.GetDouble() : 0;
             long   totalBytes    = sumSent.TryGetProperty("bytes",    out var bytes) ? bytes.GetInt64() : 0;
             var cpu  = end.GetProperty("cpu_utilization_percent");
@@ -1267,6 +1288,7 @@ public partial class MainWindow : Window
             Iperf3Bytes.Text = "--";
             Iperf3Cpu.Text = "--";
         }
+        return throughputMbps;
     }
 
     private void Iperf3ClearLog_Click(object? sender, RoutedEventArgs e) => Iperf3LogBox.Text = "";
@@ -1348,7 +1370,9 @@ public partial class MainWindow : Window
             EthrLogBox.AppendText(output);
             if (!string.IsNullOrWhiteSpace(errors)) EthrLogBox.AppendText("[ERR] " + errors);
             SetProgress(100);
-            ParseEthrOutput(output + errors);
+            double throughput = ParseEthrOutput(output + errors);
+            SaveHistory("ethr", throughput, 0, 0, 0, host, udp ? "UDP" : "TCP",
+                host + ":" + port, GetQualityLabel(CalculateScore(throughput, 0, 0, 0)));
             StatusLeft.Text = Loc.Get("status.ethrdone");
             AddLog("Ethr test finished");
         }
@@ -1373,7 +1397,7 @@ public partial class MainWindow : Window
     private static double ParseEthrRate(string num, string unit) =>
         double.TryParse(num, out var v) ? v * (unit switch { "G" => 1e9, "M" => 1e6, "K" => 1e3, _ => 1 }) : 0;
 
-    private void ParseEthrOutput(string output)
+    private double ParseEthrOutput(string output)
     {
         double throughput = 0;
         int sent = 0, received = 0, lost = 0;
@@ -1422,6 +1446,7 @@ public partial class MainWindow : Window
                 ? throughput.ToString("F1") + " Mbps | " + received + " conns | " + lossRate.ToString("F1") + "% loss"
                 : throughput.ToString("F1") + " Mbps")
             : "No throughput data";
+        return throughput;
     }
 
     private void EthrClearLog_Click(object? sender, RoutedEventArgs e) => EthrLogBox.Text = "";
@@ -2416,6 +2441,135 @@ public partial class MainWindow : Window
         if (SetAutoThemeCheck.IsChecked == true) ApplySystemTheme();
     }
 
+    // ── Continuous ping tool ────────────────────────────────────────────────
+    private bool _pingRunning;
+    private CancellationTokenSource? _pingCts;
+    private readonly List<double> _pingRtts = new();
+    private int _pingSent, _pingRecv;
+
+    private void SetPingStatus(string text, string color)
+    {
+        PingStatus.Text = text;
+        PingStatus.Foreground = (Brush)new BrushConverter().ConvertFrom(color)!;
+    }
+
+    private async void PingBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_pingRunning) { _pingCts?.Cancel(); return; }
+        string host = PingHost.Text.Trim();
+        if (host.Length == 0) { SetPingStatus("Please enter a host.", "#F87171"); return; }
+        _pingCts = new CancellationTokenSource();
+        _pingRunning = true;
+        PingBtn.Content = "Stop";
+        PingBtn.Background = (Brush)new BrushConverter().ConvertFrom("#F87171")!;
+        _pingRtts.Clear();
+        _pingSent = _pingRecv = 0;
+        try { await PingLoopAsync(host, _pingCts.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetPingStatus("Failed: " + ex.Message, "#F87171"); }
+        finally
+        {
+            _pingRunning = false;
+            PingBtn.Content = "Start";
+            PingBtn.Background = (Brush)new BrushConverter().ConvertFrom("#00E5FF")!;
+            SetPingStatus("Stopped", "#6F7686");
+        }
+    }
+
+    private async Task PingLoopAsync(string host, CancellationToken ct)
+    {
+        using var ping = new System.Net.NetworkInformation.Ping();
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var reply = await ping.SendPingAsync(host, 2000);
+                _pingSent++;
+                if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
+                {
+                    _pingRecv++;
+                    _pingRtts.Add(reply.RoundtripTime);
+                    if (_pingRtts.Count > 120) _pingRtts.RemoveAt(0);
+                }
+                double loss = _pingSent > 0 ? (_pingSent - _pingRecv) * 100.0 / _pingSent : 0;
+                PingStats.Text = $"Sent {_pingSent} · Recv {_pingRecv} · Loss {loss:F1}%" +
+                    (_pingRtts.Count > 0
+                        ? $" · Min {_pingRtts.Min():F0} · Avg {_pingRtts.Average():F1} · Max {_pingRtts.Max():F0} ms"
+                        : "");
+                DrawPingChart();
+                SetPingStatus($"Pinging {host} …", "#4ADE80");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _pingSent++;
+                SetPingStatus("Ping error: " + ex.Message, "#F87171");
+            }
+            await Task.Delay(1000, ct);
+        }
+    }
+
+    private void DrawPingChart()
+    {
+        var canvas = PingCanvas;
+        if (canvas == null) return;
+        canvas.Children.Clear();
+        double w = canvas.ActualWidth, h = canvas.ActualHeight;
+        if (w < 10 || h < 10 || _pingRtts.Count == 0) return;
+        double max = Math.Max(_pingRtts.Max(), 1);
+        double slot = (w - 6) / 120;
+        double maxScale = Math.Max(max, 30);
+        for (int i = 0; i < _pingRtts.Count; i++)
+        {
+            double rtt = _pingRtts[i];
+            double barH = Math.Max(2, rtt / maxScale * (h - 14));
+            string color = rtt < 50 ? "#4ADE80" : rtt < 150 ? "#FBBF24" : "#F87171";
+            var bar = new System.Windows.Shapes.Rectangle
+            {
+                Width = Math.Max(2, slot - 2),
+                Height = barH,
+                RadiusX = 1.5, RadiusY = 1.5,
+                Fill = (Brush)new BrushConverter().ConvertFrom(color)!
+            };
+            canvas.Children.Add(bar);
+            Canvas.SetLeft(bar, 3 + i * slot);
+            Canvas.SetTop(bar, h - 4 - barH);
+        }
+        var lbl = new TextBlock
+        {
+            Text = max.ToString("F0") + " ms", FontSize = 9,
+            Foreground = (Brush)new BrushConverter().ConvertFrom("#565C74")!
+        };
+        canvas.Children.Add(lbl);
+        lbl.Measure(new Size(w, h));
+        Canvas.SetLeft(lbl, 6); Canvas.SetTop(lbl, 2);
+    }
+
+    private void MonitorExportCsv_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_monitorSamples.Count == 0)
+        {
+            AddMonitorLog("[i] No monitor samples to export yet.");
+            return;
+        }
+        try
+        {
+            string path = global::System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                "SpeedPro_Monitor_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
+            var sb = new StringBuilder("Time,SpeedMbps,TtfbMs\r\n");
+            foreach (var m in _monitorSamples)
+                sb.Append(m.Time).Append(',').Append(m.SpeedMbps).Append(',').Append(m.TtfbMs).Append("\r\n");
+            global::System.IO.File.WriteAllText(path, sb.ToString());
+            AddMonitorLog($"[i] Exported {_monitorSamples.Count} samples to {path}");
+        }
+        catch (Exception ex)
+        {
+            AddMonitorLog("[ERR] Export failed: " + ex.Message);
+        }
+    }
+
     // ── History ─────────────────────────────────────────────────────────────
     private void HistoryFilter_Changed(object? sender, SelectionChangedEventArgs e)
     {
@@ -2720,6 +2874,8 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        RememberWindowBounds();
+        SaveConfig();
         _cts?.Cancel();
         _ethrServer?.Kill();
         _iperf3Server?.Kill();
@@ -2739,10 +2895,16 @@ public partial class MainWindow : Window
         {
             _trayIcon = new System.Windows.Forms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
                 Text = "SpeedPro",
                 Visible = false
             };
+            try
+            {
+                // 用应用自身图标（assets/app.ico 已编译为 exe 图标）
+                if (System.Environment.ProcessPath != null)
+                    _trayIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Environment.ProcessPath);
+            }
+            catch { _trayIcon.Icon = System.Drawing.SystemIcons.Application; }
             var menu = new System.Windows.Forms.ContextMenuStrip();
             menu.Items.Add("打开 SpeedPro", null, (s, e) => RestoreFromTray());
             menu.Items.Add("退出", null, (s, e) => { RestoreFromTray(); Close(); });
@@ -2754,7 +2916,35 @@ public partial class MainWindow : Window
 
     private void Window_StateChanged(object? sender, EventArgs e)
     {
+        if (WindowState == WindowState.Normal)
+        {
+            _winL = Left; _winT = Top; _winW = Width; _winH = Height;
+        }
         if (WindowState == WindowState.Minimized && MinimizeToTray) HideToTray();
+    }
+
+    // 窗口位置/尺寸记忆（Normal 状态下的最近值）
+    private double _winL, _winT, _winW, _winH;
+
+    private void RememberWindowBounds()
+    {
+        if (WindowState == WindowState.Normal)
+        {
+            _winL = Left; _winT = Top; _winW = Width; _winH = Height;
+        }
+    }
+
+    private void RestoreWindowBounds()
+    {
+        if (_winW >= MinWidth && _winH >= MinHeight)
+        {
+            Width = _winW; Height = _winH;
+            // 钳制到虚拟屏幕范围内，防止窗口落到不可见区域
+            Left = Math.Clamp(_winL, SystemParameters.VirtualScreenLeft,
+                SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - 100);
+            Top = Math.Clamp(_winT, SystemParameters.VirtualScreenTop,
+                SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - 50);
+        }
     }
 
     private void HideToTray()
